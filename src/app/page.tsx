@@ -458,30 +458,31 @@ export default function Home() {
     const refDuration = melodyData.length > 0 ? melodyData[melodyData.length - 1].time : 0;
     const completion = refDuration > 0 ? Math.min(duration / refDuration, 1) : 0;
 
-    // 节奏评分 = 覆盖率(70%) + 完成度(30%)
+    // 节奏评分 = 覆盖率(70%) + 完成度(30%)，满分100分
     let rhythmCoverageScore = 0;
-    if (coverage >= 0.8) rhythmCoverageScore = 21;
-    else if (coverage >= 0.7) rhythmCoverageScore = 20;
-    else if (coverage >= 0.6) rhythmCoverageScore = 19;
-    else if (coverage >= 0.5) rhythmCoverageScore = 18;
-    else if (coverage >= 0.4) rhythmCoverageScore = 16;
-    else if (coverage >= 0.3) rhythmCoverageScore = 14;
-    else if (coverage >= 0.2) rhythmCoverageScore = 12;
-    else if (coverage >= 0.1) rhythmCoverageScore = 10;
-    else rhythmCoverageScore = 8;
+    if (coverage >= 0.9) rhythmCoverageScore = 70;
+    else if (coverage >= 0.8) rhythmCoverageScore = 65;
+    else if (coverage >= 0.7) rhythmCoverageScore = 60;
+    else if (coverage >= 0.6) rhythmCoverageScore = 55;
+    else if (coverage >= 0.5) rhythmCoverageScore = 50;
+    else if (coverage >= 0.4) rhythmCoverageScore = 45;
+    else if (coverage >= 0.3) rhythmCoverageScore = 40;
+    else if (coverage >= 0.2) rhythmCoverageScore = 35;
+    else if (coverage >= 0.1) rhythmCoverageScore = 30;
+    else rhythmCoverageScore = 25;
 
     let completionScore = 0;
-    if (completion >= 0.9) completionScore = 9;
-    else if (completion >= 0.8) completionScore = 8;
-    else if (completion >= 0.7) completionScore = 7;
-    else if (completion >= 0.6) completionScore = 6;
-    else if (completion >= 0.5) completionScore = 5;
-    else if (completion >= 0.4) completionScore = 4;
-    else if (completion >= 0.3) completionScore = 3;
-    else if (completion >= 0.2) completionScore = 2;
-    else completionScore = 1;
+    if (completion >= 0.9) completionScore = 30;
+    else if (completion >= 0.8) completionScore = 28;
+    else if (completion >= 0.7) completionScore = 26;
+    else if (completion >= 0.6) completionScore = 24;
+    else if (completion >= 0.5) completionScore = 22;
+    else if (completion >= 0.4) completionScore = 20;
+    else if (completion >= 0.3) completionScore = 18;
+    else if (completion >= 0.2) completionScore = 15;
+    else completionScore = 10;
 
-    const scoreRhythm = rhythmCoverageScore + completionScore;
+    const scoreRhythm = Math.min(100, rhythmCoverageScore + completionScore);
 
     // ========== 情绪评分（20%）==========
     const studentVol = stats.studentVol;
@@ -497,43 +498,43 @@ export default function Home() {
     const dynamicRange = volMax - volMin;
     const volStd = Math.sqrt(studentVol.reduce((a, b) => a + Math.pow(b - volMean, 2), 0) / studentVol.length);
 
-    // 基础分（降低到60，拉开区分度）
-    let scoreEmotion = 60;
+    // 基础分
+    let scoreEmotion = 50;
 
-    // 音量评分（40分权重）
+    // 音量评分（40分权重）- 提高门槛
     let volScore = 0;
-    if (volMean >= 0.05) volScore = 40;           // 音量很充足
-    else if (volMean >= 0.04) volScore = 35;      // 音量充足
-    else if (volMean >= 0.03) volScore = 30;      // 音量较好
+    if (volMean >= 0.08) volScore = 40;           // 音量很充足
+    else if (volMean >= 0.06) volScore = 35;      // 音量充足
+    else if (volMean >= 0.04) volScore = 30;      // 音量较好
     else if (volMean >= 0.02) volScore = 25;      // 音量适中
     else if (volMean >= 0.015) volScore = 20;     // 音量偏小
     else volScore = 15;                            // 音量太小
 
     scoreEmotion += volScore;
 
-    // 动态范围评分（30分权重）
+    // 动态范围评分（30分权重）- 提高门槛
     let dynamicScore = 0;
-    if (dynamicRange >= 0.05) dynamicScore = 30;   // 动态范围很大
-    else if (dynamicRange >= 0.04) dynamicScore = 26;
-    else if (dynamicRange >= 0.03) dynamicScore = 22;
+    if (dynamicRange >= 0.08) dynamicScore = 30;   // 动态范围很大
+    else if (dynamicRange >= 0.06) dynamicScore = 26;
+    else if (dynamicRange >= 0.04) dynamicScore = 22;
     else if (dynamicRange >= 0.02) dynamicScore = 18;
     else if (dynamicRange >= 0.015) dynamicScore = 14;
     else dynamicScore = 10;                        // 动态范围小
 
     scoreEmotion += dynamicScore;
 
-    // 稳定性评分（30分权重）- 适度波动是好的
+    // 稳定性评分（30分权重）- 提高门槛
     let stabilityScore = 0;
-    if (volStd >= 0.01 && volStd < 0.05) stabilityScore = 30;   // 适度波动
-    else if (volStd >= 0.005 && volStd < 0.06) stabilityScore = 25;
-    else if (volStd >= 0.002 && volStd < 0.07) stabilityScore = 20;
-    else if (volStd >= 0 && volStd < 0.08) stabilityScore = 15;
+    if (volStd >= 0.02 && volStd < 0.04) stabilityScore = 30;   // 适度波动（更严格）
+    else if (volStd >= 0.015 && volStd < 0.045) stabilityScore = 25;
+    else if (volStd >= 0.01 && volStd < 0.05) stabilityScore = 20;
+    else if (volStd >= 0.005 && volStd < 0.055) stabilityScore = 15;
     else stabilityScore = 10;                                     // 波动异常
 
     scoreEmotion += stabilityScore;
 
-    // 最高不超过100，最低不低于60
-    scoreEmotion = Math.min(100, Math.max(60, scoreEmotion));
+    // 最高不超过100，最低不低于50
+    scoreEmotion = Math.min(100, Math.max(50, scoreEmotion));
 
     // ========== 综合评分 ==========
     let total = Math.round(scorePitch * 0.5 + scoreRhythm * 0.3 + scoreEmotion * 0.2);
@@ -844,7 +845,7 @@ export default function Home() {
       <div className="flex flex-1 flex-col items-center overflow-y-auto p-5 border-r border-[#333]">
         <div className="w-full max-w-[600px] rounded-2xl bg-[#1e1e20] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.4)] border border-[#333]">
           <h2 className="mb-5 flex items-center justify-between text-lg">
-            <span>🎹 智能声乐评测 <span style={{ fontSize: '12px', background: '#333', padding: '2px 6px', borderRadius: '4px', color: '#aaa' }}>V8.6 平衡版</span></span>
+            <span>🎹 智能声乐评测 <span style={{ fontSize: '12px', background: '#333', padding: '2px 6px', borderRadius: '4px', color: '#aaa' }}>V8.7 调优版</span></span>
             <span className="text-base font-bold text-[#0a84ff]">
               {refBuffer ? `当前: 第 ${students.length + 1} 位同学` : '等待文件'}
             </span>
