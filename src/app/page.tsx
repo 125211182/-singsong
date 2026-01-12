@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 const CONFIG = {
   scrollSpeed: 100,
   analyzePrecision: 0.05,
-  tolerance: 2.5, // 宽松容错
+  tolerance: 1.5, // 容错值（原来2.5太宽松，改为1.5）
   minVol: 0.02
 };
 
@@ -425,43 +425,233 @@ export default function Home() {
     const stats = appDataRef.current.stats;
     const melodyData = appDataRef.current.melodyData;
 
+    // ========== 音准评分（50%）==========
+    // 1. 命中率（70%权重）
     const rawAccuracy = stats.frames > 0 ? stats.hits / stats.frames : 0;
-    let scorePitch = 50 + Math.round(rawAccuracy * 50);
-    const avgDiff = stats.frames > 0 ? stats.diffSum / stats.frames : 0;
-    if (avgDiff > 1.5) scorePitch -= 5;
-    scorePitch = Math.min(100, Math.round(scorePitch));
+    let accuracyScore = rawAccuracy * 70;
 
+    // 2. 音高偏差（30%权重）
+    const avgDiff = stats.frames > 0 ? stats.diffSum / stats.frames : 0;
+    let precisionScore = 0;
+    if (avgDiff <= 0.5) precisionScore = 30;      // 非常精准
+    else if (avgDiff <= 1.0) precisionScore = 25; // 很好
+    else if (avgDiff <= 1.5) precisionScore = 20; // 一般
+    else if (avgDiff <= 2.0) precisionScore = 15; // 较差
+    else if (avgDiff <= 2.5) precisionScore = 10; // 差
+    else precisionScore = 5;                      // 很差
+
+    // 综合音准分
+    let scorePitch = Math.round(accuracyScore + precisionScore);
+
+    // 严重偏差惩罚
+    if (avgDiff > 1.5) scorePitch -= 5;
+    if (avgDiff > 2.0) scorePitch -= 5;
+
+    // 最高不超过100，最低不低于30
+    scorePitch = Math.min(100, Math.max(30, scorePitch));
+
+    // ========== 节奏评分（30%）==========
     const teacherTotal = melodyData.length;
     const coverage = teacherTotal > 0 ? stats.frames / teacherTotal : 0;
-    const scoreRhythm = Math.min(100, Math.round((coverage / 0.8) * 100));
 
-    const volMean = stats.studentVol.reduce((a, b) => a + b, 0) / (stats.studentVol.length || 1);
-    const volVar = stats.studentVol.reduce((a, b) => a + Math.pow(b - volMean, 2), 0) / (stats.studentVol.length || 1);
-    const scoreEmotion = Math.min(100, Math.round((Math.sqrt(volVar) / 0.02) * 40 + 60));
+    // 覆盖率评分
+    let coverageScore = 0;
+    if (coverage >= 0.9) coverageScore = 30;   // 完整
+    else if (coverage >= 0.8) coverageScore = 27;
+    else if (coverage >= 0.7) coverageScore = 24;
+    else if (coverage >= 0.6) coverageScore = 20;
+    else if (coverage >= 0.5) coverageScore = 15;
+    else if (coverage >= 0.4) coverageScore = 10;
+    else coverageScore = 5;
 
+    const scoreRhythm = coverageScore;
+
+    // ========== 情绪评分（20%）==========
+    const studentVol = stats.studentVol;
+    let scoreEmotion = 60; // 基础分
+
+    if (studentVol.length > 0) {
+      // 平均音量
+      const volMean = studentVol.reduce((a, b) => a + b, 0) / studentVol.length;
+
+      // 音量是否足够
+      if (volMean >= 0.05) scoreEmotion += 10;      // 音量充足
+      else if (volMean >= 0.03) scoreEmotion += 5; // 音量适中
+      else scoreEmotion += 0;                       // 音量偏小
+
+      // 音量变化（动态范围）
+      const volMin = Math.min(...studentVol);
+      const volMax = Math.max(...studentVol);
+      const dynamicRange = volMax - volMin;
+
+      if (dynamicRange >= 0.05) scoreEmotion += 10;      // 动态范围大，情感丰富
+      else if (dynamicRange >= 0.03) scoreEmotion += 5; // 动态范围适中
+      else scoreEmotion += 0;                           // 动态范围小，平淡
+
+      // 稳定性（波动不能太大）
+      const volStd = Math.sqrt(studentVol.reduce((a, b) => a + Math.pow(b - volMean, 2), 0) / studentVol.length);
+      if (volStd > 0.03 && volStd < 0.08) scoreEmotion += 5; // 适度的波动
+    }
+
+    // 最高不超过100，最低不低于40
+    scoreEmotion = Math.min(100, Math.max(40, scoreEmotion));
+
+    // ========== 综合评分 ==========
     let total = Math.round(scorePitch * 0.5 + scoreRhythm * 0.3 + scoreEmotion * 0.2);
 
-    if (coverage > 0.6) total = Math.max(65, total);
+    // 调整：如果覆盖率太低，总分惩罚
+    if (coverage < 0.5) total = Math.max(55, total - 10);
+    if (coverage < 0.3) total = Math.max(40, total - 15);
 
-    const comments = generateDetailedComments(scorePitch, scoreRhythm, scoreEmotion, total);
+    // 保底分
+    if (coverage > 0.6 && total < 60) total = 60;
+    if (coverage > 0.8 && total < 65) total = 65;
+
+    const comments = generateDetailedComments(scorePitch, scoreRhythm, scoreEmotion, total, avgDiff, coverage);
     addStudentCard(total, scorePitch, scoreRhythm, scoreEmotion, comments, blob);
   };
 
-  const generateDetailedComments = (p: number, r: number, e: number, total: number): ScoreComments => {
-    let cPitch, cRhythm, cEmotion;
+  const generateDetailedComments = (p: number, r: number, e: number, total: number, avgDiff: number, coverage: number): ScoreComments => {
+    // ========== 音准评语 ==========
+    const pitchComments = {
+      perfect: [
+        "音准极其精准！每个音都落在点上，专业级别的表现！",
+        "音高控制能力超强，听感舒适，非常稳定！",
+        "音准完美！几乎没有偏差，完全可以达到专业水准！"
+      ],
+      excellent: [
+        "音准非常出色！绝大部分音都很准确，听感很棒！",
+        "音高控制很好，偶尔有小偏差但不影响整体效果！",
+        "音准优秀！核心音都很稳，表现令人满意！"
+      ],
+      good: [
+        "音准不错，大部分音都在调上，继续加油！",
+        "整体音准良好，建议多加练习长音的稳定性！",
+        "音准基本达标，注意细微的音高变化会更好！"
+      ],
+      fair: [
+        "音准有波动，建议多听原声，找准每个音的位置！",
+        "部分音高不够准确，需要加强音准训练！",
+        "音准需要改进，跟着范唱练习会有帮助！"
+      ],
+      poor: [
+        "音准偏差较大，建议每天进行音阶练习！",
+        "音高控制不够好，多听多唱是关键！",
+        "音准问题较明显，建议加强基础音准训练！"
+      ]
+    };
 
-    if (p >= 90) cPitch = "音高控制精准，核心音准非常稳定！";
-    else if (p >= 80) cPitch = "大部分音都在调上，整体听感舒适。";
-    else if (p >= 60) cPitch = "基础音准合格，注意长音的稳定性。";
-    else cPitch = "音准有些浮动，建议多听范唱找准基频。";
+    let cPitch = "";
+    if (p >= 95) cPitch = pitchComments.perfect[Math.floor(Math.random() * pitchComments.perfect.length)];
+    else if (p >= 85) cPitch = pitchComments.excellent[Math.floor(Math.random() * pitchComments.excellent.length)];
+    else if (p >= 75) cPitch = pitchComments.good[Math.floor(Math.random() * pitchComments.good.length)];
+    else if (p >= 60) cPitch = pitchComments.fair[Math.floor(Math.random() * pitchComments.fair.length)];
+    else cPitch = pitchComments.poor[Math.floor(Math.random() * pitchComments.poor.length)];
 
-    if (r >= 90) cRhythm = "节奏卡点精准，非常有乐感。";
-    else if (r >= 70) cRhythm = "基本跟上了音乐骨架，完整度不错。";
-    else cRhythm = "部分段落漏唱或拖拍，注意听鼓点。";
+    // 根据具体偏差补充评语
+    if (avgDiff > 2.0) {
+      cPitch += " 平均偏差较大，建议反复聆听标准录音。";
+    } else if (avgDiff > 1.5) {
+      cPitch += " 有些音高不够稳，注意气息控制。";
+    } else if (avgDiff < 0.5) {
+      cPitch += " 平均偏差很小，非常难得！";
+    }
 
-    if (e >= 85) cEmotion = "强弱对比鲜明，情感充沛！";
-    else if (e >= 70) cEmotion = "声音平稳，再大胆一点会更好。";
-    else cEmotion = "声音有点小，下次试试把声音放出来！";
+    // ========== 节奏评语 ==========
+    const rhythmComments = {
+      perfect: [
+        "节奏感极强！每个节拍都卡得很准！",
+        "节奏把控完美！乐感十足，非常有节奏意识！",
+        "节奏精准！完全跟上了音乐骨架！"
+      ],
+      excellent: [
+        "节奏很好！基本跟上了音乐，完整性高！",
+        "节奏感不错！大部分时间都能卡点！",
+        "节奏把握良好！听感连贯，很顺畅！"
+      ],
+      good: [
+        "节奏基本准确，偶尔有快慢但不影响整体！",
+        "节奏尚可，建议多练习跟着鼓点唱！",
+        "节奏控制一般，注意听伴奏的节奏变化！"
+      ],
+      fair: [
+        "节奏有些不稳，部分段落跟不上！",
+        "节奏感需要加强，多听音乐多练习！",
+        "容易抢拍或拖拍，建议跟着节拍器练习！"
+      ],
+      poor: [
+        "节奏问题较明显，需要加强节奏训练！",
+        "经常出现节奏脱节，建议多跟着原声练习！",
+        "节奏把握不足，需要基础节奏训练！"
+      ]
+    };
+
+    let cRhythm = "";
+    if (r >= 95) cRhythm = rhythmComments.perfect[Math.floor(Math.random() * rhythmComments.perfect.length)];
+    else if (r >= 85) cRhythm = rhythmComments.excellent[Math.floor(Math.random() * rhythmComments.excellent.length)];
+    else if (r >= 75) cRhythm = rhythmComments.good[Math.floor(Math.random() * rhythmComments.good.length)];
+    else if (r >= 60) cRhythm = rhythmComments.fair[Math.floor(Math.random() * rhythmComments.fair.length)];
+    else cRhythm = rhythmComments.poor[Math.floor(Math.random() * rhythmComments.poor.length)];
+
+    // 根据覆盖率补充评语
+    if (coverage < 0.5) {
+      cRhythm += " 有较多漏唱部分，完整度需要提高。";
+    } else if (coverage < 0.7) {
+      cRhythm += " 部分段落没跟上，要注意听伴奏。";
+    } else if (coverage >= 0.9) {
+      cRhythm += " 完整度很高，非常棒！";
+    }
+
+    // ========== 情绪评语 ==========
+    const emotionComments = {
+      perfect: [
+        "情感表达极佳！强弱对比鲜明，感染力十足！",
+        "情绪饱满！演唱非常有感情，能打动人心！",
+        "情感表达完美！声音的强弱控制恰到好处！"
+      ],
+      excellent: [
+        "情感丰富！声音有起伏，很有感染力！",
+        "情绪表达很好！强弱对比明显，听感很棒！",
+        "情感充沛！声音有层次，表现力强！"
+      ],
+      good: [
+        "情感表达不错！声音有一定的强弱变化！",
+        "情绪尚可，再放开一点会更棒！",
+        "情感表达一般，可以尝试更投入一些！"
+      ],
+      fair: [
+        "声音较为平淡，可以尝试增加强弱对比！",
+        "情绪不够丰富，建议多听原唱的情感处理！",
+        "声音比较平，需要注意情感的表达！"
+      ],
+      poor: [
+        "声音太小了，大胆唱出来！",
+        "情绪表达不足，需要更自信地演唱！",
+        "声音缺乏感染力，建议多练习情感表达！"
+      ],
+      quiet: [
+        "声音有点小，下次可以更大声一些！",
+        "音量偏小，放开一点会更好听！",
+        "声音需要再响亮一些，不要害羞！"
+      ]
+    };
+
+    let cEmotion = "";
+
+    // 检查音量是否太小
+    const volMean = appDataRef.current.stats.studentVol.length > 0
+      ? appDataRef.current.stats.studentVol.reduce((a, b) => a + b, 0) / appDataRef.current.stats.studentVol.length
+      : 0;
+
+    if (volMean < 0.02 && e < 60) {
+      cEmotion = emotionComments.quiet[Math.floor(Math.random() * emotionComments.quiet.length)];
+    } else {
+      if (e >= 95) cEmotion = emotionComments.perfect[Math.floor(Math.random() * emotionComments.perfect.length)];
+      else if (e >= 85) cEmotion = emotionComments.excellent[Math.floor(Math.random() * emotionComments.excellent.length)];
+      else if (e >= 75) cEmotion = emotionComments.good[Math.floor(Math.random() * emotionComments.good.length)];
+      else if (e >= 60) cEmotion = emotionComments.fair[Math.floor(Math.random() * emotionComments.fair.length)];
+      else cEmotion = emotionComments.poor[Math.floor(Math.random() * emotionComments.poor.length)];
+    }
 
     return { pitch: cPitch, rhythm: cRhythm, emotion: cEmotion };
   };
@@ -478,9 +668,15 @@ export default function Home() {
     const name = `同学 ${String.fromCharCode(65 + data.students.length)}`;
     let rank = 'C';
     let color = '#ff453a';
-    if (total >= 90) { rank = 'S'; color = '#ffd60a'; }
+    if (total >= 95) { rank = 'S+'; color = '#ffd60a'; } // 金色
+    else if (total >= 90) { rank = 'S'; color = '#ffd60a'; }
+    else if (total >= 85) { rank = 'A+'; color = '#30d158'; }
     else if (total >= 80) { rank = 'A'; color = '#30d158'; }
-    else if (total >= 60) { rank = 'B'; color = '#0a84ff'; }
+    else if (total >= 75) { rank = 'B+'; color = '#0a84ff'; }
+    else if (total >= 70) { rank = 'B'; color = '#0a84ff'; }
+    else if (total >= 65) { rank = 'C+'; color = '#ff453a'; }
+    else if (total >= 60) { rank = 'C'; color = '#ff453a'; }
+    else { rank = 'D'; color = '#ff6b6b'; } // 新增 D 等级
 
     const card = (
       <div key={data.students.length} className="student-card" style={{ borderLeftColor: color }}>
