@@ -365,7 +365,8 @@ export default function Home() {
       if (rms > 0.01) {
         data.stats.studentVol.push(rms);
 
-        if (currentNote) {
+        // 统计检测到有效音高的帧数（无论是否有currentNote）
+        if (freq && freq > 60) {
           data.stats.frames = data.stats.frames + 1;
         }
 
@@ -448,69 +449,118 @@ export default function Home() {
 
     // ========== 节奏评分（30%）==========
     const teacherTotal = melodyData.length;
+    // 覆盖率：学生演唱的帧数 / 参考音符总数
     const coverage = teacherTotal > 0 ? stats.frames / teacherTotal : 0;
 
-    // 覆盖率评分（极度宽松）
-    let coverageScore = 28; // 基础分直接给28分
+    // 完成度：基于演唱时长判断
+    // stats.studentVol.length 是总采样次数，0.05是采样间隔，所以演唱时长 = length * 0.05
+    const duration = stats.studentVol.length * CONFIG.analyzePrecision;
+    const refDuration = melodyData.length > 0 ? melodyData[melodyData.length - 1].time : 0;
+    const completion = refDuration > 0 ? Math.min(duration / refDuration, 1) : 0;
 
-    if (coverage >= 0.4) coverageScore = 30;   // 40%覆盖率即可满分
-    else if (coverage >= 0.3) coverageScore = 29;
+    // 节奏评分 = 覆盖率(70%) + 完成度(30%)
+    let rhythmCoverageScore = 0;
+    if (coverage >= 0.8) rhythmCoverageScore = 21;
+    else if (coverage >= 0.7) rhythmCoverageScore = 20;
+    else if (coverage >= 0.6) rhythmCoverageScore = 19;
+    else if (coverage >= 0.5) rhythmCoverageScore = 18;
+    else if (coverage >= 0.4) rhythmCoverageScore = 16;
+    else if (coverage >= 0.3) rhythmCoverageScore = 14;
+    else if (coverage >= 0.2) rhythmCoverageScore = 12;
+    else if (coverage >= 0.1) rhythmCoverageScore = 10;
+    else rhythmCoverageScore = 8;
 
-    const scoreRhythm = coverageScore;
+    let completionScore = 0;
+    if (completion >= 0.9) completionScore = 9;
+    else if (completion >= 0.8) completionScore = 8;
+    else if (completion >= 0.7) completionScore = 7;
+    else if (completion >= 0.6) completionScore = 6;
+    else if (completion >= 0.5) completionScore = 5;
+    else if (completion >= 0.4) completionScore = 4;
+    else if (completion >= 0.3) completionScore = 3;
+    else if (completion >= 0.2) completionScore = 2;
+    else completionScore = 1;
+
+    const scoreRhythm = rhythmCoverageScore + completionScore;
 
     // ========== 情绪评分（20%）==========
     const studentVol = stats.studentVol;
-    let scoreEmotion = 70; // 基础分（从65提高到70，稍微更严谨）
 
-    if (studentVol.length > 0) {
-      // 平均音量
-      const volMean = studentVol.reduce((a, b) => a + b, 0) / studentVol.length;
-
-      // 音量是否足够
-      if (volMean >= 0.04) scoreEmotion += 12;     // 音量充足（降低加分幅度）
-      else if (volMean >= 0.02) scoreEmotion += 8; // 音量适中
-      else scoreEmotion += 3;                       // 音量偏小但给了基础分
-
-      // 音量变化（动态范围）
-      const volMin = Math.min(...studentVol);
-      const volMax = Math.max(...studentVol);
-      const dynamicRange = volMax - volMin;
-
-      if (dynamicRange >= 0.04) scoreEmotion += 8;      // 动态范围大（降低加分幅度）
-      else if (dynamicRange >= 0.02) scoreEmotion += 4; // 动态范围适中
-      // else scoreEmotion += 0; // 不扣分
-
-      // 稳定性（适度波动加分）
-      const volStd = Math.sqrt(studentVol.reduce((a, b) => a + Math.pow(b - volMean, 2), 0) / studentVol.length);
-      if (volStd > 0.02 && volStd < 0.06) scoreEmotion += 4;
+    if (studentVol.length === 0) {
+      return;
     }
 
-    // 最高不超过100，最低不低于70（稍微更严谨）
-    scoreEmotion = Math.min(100, Math.max(70, scoreEmotion));
+    // 计算各项指标
+    const volMean = studentVol.reduce((a, b) => a + b, 0) / studentVol.length;
+    const volMin = Math.min(...studentVol);
+    const volMax = Math.max(...studentVol);
+    const dynamicRange = volMax - volMin;
+    const volStd = Math.sqrt(studentVol.reduce((a, b) => a + Math.pow(b - volMean, 2), 0) / studentVol.length);
+
+    // 基础分（降低到60，拉开区分度）
+    let scoreEmotion = 60;
+
+    // 音量评分（40分权重）
+    let volScore = 0;
+    if (volMean >= 0.05) volScore = 40;           // 音量很充足
+    else if (volMean >= 0.04) volScore = 35;      // 音量充足
+    else if (volMean >= 0.03) volScore = 30;      // 音量较好
+    else if (volMean >= 0.02) volScore = 25;      // 音量适中
+    else if (volMean >= 0.015) volScore = 20;     // 音量偏小
+    else volScore = 15;                            // 音量太小
+
+    scoreEmotion += volScore;
+
+    // 动态范围评分（30分权重）
+    let dynamicScore = 0;
+    if (dynamicRange >= 0.05) dynamicScore = 30;   // 动态范围很大
+    else if (dynamicRange >= 0.04) dynamicScore = 26;
+    else if (dynamicRange >= 0.03) dynamicScore = 22;
+    else if (dynamicRange >= 0.02) dynamicScore = 18;
+    else if (dynamicRange >= 0.015) dynamicScore = 14;
+    else dynamicScore = 10;                        // 动态范围小
+
+    scoreEmotion += dynamicScore;
+
+    // 稳定性评分（30分权重）- 适度波动是好的
+    let stabilityScore = 0;
+    if (volStd >= 0.01 && volStd < 0.05) stabilityScore = 30;   // 适度波动
+    else if (volStd >= 0.005 && volStd < 0.06) stabilityScore = 25;
+    else if (volStd >= 0.002 && volStd < 0.07) stabilityScore = 20;
+    else if (volStd >= 0 && volStd < 0.08) stabilityScore = 15;
+    else stabilityScore = 10;                                     // 波动异常
+
+    scoreEmotion += stabilityScore;
+
+    // 最高不超过100，最低不低于60
+    scoreEmotion = Math.min(100, Math.max(60, scoreEmotion));
 
     // ========== 综合评分 ==========
     let total = Math.round(scorePitch * 0.5 + scoreRhythm * 0.3 + scoreEmotion * 0.2);
 
-    // 鼓励性调整（V8.5 极度放宽）
-    // 如果音准和情绪都不错，即使节奏一般也不应太低
-    if (scorePitch >= 80 && scoreEmotion >= 75) {
-      total = Math.max(total, 90);
-    }
-    // 如果节奏覆盖率超过40%，总分应该至少90分（范唱应能达到90+）
-    if (coverage >= 0.4 && total < 90) {
-      total = 90;
-    }
-    // 如果节奏覆盖率超过30%，总分应该至少85分
-    if (coverage >= 0.3 && total < 85) {
-      total = 85;
-    }
-    // 如果节奏覆盖率超过20%，总分应该至少80分
-    if (coverage >= 0.2 && total < 80) {
-      total = 80;
-    }
-
-    // 保底分（鼓励为主）
-    if (coverage >= 0.1 && total < 75) {
+    // 鼓励性调整（V8.6 平衡版）
+    // 只在演唱完成度较高时才给予高分保底
+    if (completion >= 0.7) {
+      // 演唱完成度70%以上
+      if (scorePitch >= 80 && scoreEmotion >= 75) {
+        total = Math.max(total, 90);
+      }
+      if (coverage >= 0.5 && total < 90) {
+        total = 90;
+      }
+      if (coverage >= 0.4 && total < 85) {
+        total = 85;
+      }
+    } else if (completion >= 0.5) {
+      // 演唱完成度50%以上
+      if (scorePitch >= 80 && scoreEmotion >= 75) {
+        total = Math.max(total, 85);
+      }
+      if (coverage >= 0.4 && total < 80) {
+        total = 80;
+      }
+    } else if (coverage >= 0.3 && total < 75) {
+      // 演唱完成度较低，只给予基础保底
       total = 75;
     }
 
@@ -794,7 +844,7 @@ export default function Home() {
       <div className="flex flex-1 flex-col items-center overflow-y-auto p-5 border-r border-[#333]">
         <div className="w-full max-w-[600px] rounded-2xl bg-[#1e1e20] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.4)] border border-[#333]">
           <h2 className="mb-5 flex items-center justify-between text-lg">
-            <span>🎹 智能声乐评测 <span style={{ fontSize: '12px', background: '#333', padding: '2px 6px', borderRadius: '4px', color: '#aaa' }}>V8.5 极暖版</span></span>
+            <span>🎹 智能声乐评测 <span style={{ fontSize: '12px', background: '#333', padding: '2px 6px', borderRadius: '4px', color: '#aaa' }}>V8.6 平衡版</span></span>
             <span className="text-base font-bold text-[#0a84ff]">
               {refBuffer ? `当前: 第 ${students.length + 1} 位同学` : '等待文件'}
             </span>
