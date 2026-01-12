@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-// ================= 配置 (V8.0 暖心版参数) =================
+// ================= 配置 (V8.3 暖心版参数) =================
 const CONFIG = {
   scrollSpeed: 100,
   analyzePrecision: 0.05,
-  tolerance: 2.0, // 容错值（调整为2.0，在1.5和2.5之间）
+  tolerance: 2.2, // 容错值（提高到2.2，更宽松）
   minVol: 0.015   // 降低音量阈值，更容易检测
 };
 
@@ -450,68 +450,71 @@ export default function Home() {
     const teacherTotal = melodyData.length;
     const coverage = teacherTotal > 0 ? stats.frames / teacherTotal : 0;
 
-    // 覆盖率评分（调整为更宽松）
+    // 覆盖率评分（进一步降低要求，更加宽松）
     let coverageScore = 0;
-    if (coverage >= 0.7) coverageScore = 30;   // 很好
-    else if (coverage >= 0.6) coverageScore = 28;
-    else if (coverage >= 0.5) coverageScore = 25;
-    else if (coverage >= 0.4) coverageScore = 22;
-    else if (coverage >= 0.3) coverageScore = 18;
-    else if (coverage >= 0.2) coverageScore = 15;
-    else coverageScore = 12;                     // 基础分
+    if (coverage >= 0.6) coverageScore = 30;   // 降低到60%即可满分
+    else if (coverage >= 0.5) coverageScore = 28;
+    else if (coverage >= 0.4) coverageScore = 25;
+    else if (coverage >= 0.3) coverageScore = 22;
+    else if (coverage >= 0.2) coverageScore = 20; // 提高基础分
+    else coverageScore = 20;                     // 基础分提高到20
 
     const scoreRhythm = coverageScore;
 
     // ========== 情绪评分（20%）==========
     const studentVol = stats.studentVol;
-    let scoreEmotion = 65; // 基础分（提高）
+    let scoreEmotion = 70; // 基础分（从65提高到70，稍微更严谨）
 
     if (studentVol.length > 0) {
       // 平均音量
       const volMean = studentVol.reduce((a, b) => a + b, 0) / studentVol.length;
 
       // 音量是否足够
-      if (volMean >= 0.04) scoreEmotion += 15;     // 音量充足
-      else if (volMean >= 0.02) scoreEmotion += 10; // 音量适中
-      else scoreEmotion += 5;                       // 音量偏小但给了基础分
+      if (volMean >= 0.04) scoreEmotion += 12;     // 音量充足（降低加分幅度）
+      else if (volMean >= 0.02) scoreEmotion += 8; // 音量适中
+      else scoreEmotion += 3;                       // 音量偏小但给了基础分
 
       // 音量变化（动态范围）
       const volMin = Math.min(...studentVol);
       const volMax = Math.max(...studentVol);
       const dynamicRange = volMax - volMin;
 
-      if (dynamicRange >= 0.04) scoreEmotion += 10;      // 动态范围大
-      else if (dynamicRange >= 0.02) scoreEmotion += 5; // 动态范围适中
+      if (dynamicRange >= 0.04) scoreEmotion += 8;      // 动态范围大（降低加分幅度）
+      else if (dynamicRange >= 0.02) scoreEmotion += 4; // 动态范围适中
       // else scoreEmotion += 0; // 不扣分
 
       // 稳定性（适度波动加分）
       const volStd = Math.sqrt(studentVol.reduce((a, b) => a + Math.pow(b - volMean, 2), 0) / studentVol.length);
-      if (volStd > 0.02 && volStd < 0.06) scoreEmotion += 5;
+      if (volStd > 0.02 && volStd < 0.06) scoreEmotion += 4;
     }
 
-    // 最高不超过100，最低不低于65（提高最低分）
-    scoreEmotion = Math.min(100, Math.max(65, scoreEmotion));
+    // 最高不超过100，最低不低于70（稍微更严谨）
+    scoreEmotion = Math.min(100, Math.max(70, scoreEmotion));
 
     // ========== 综合评分 ==========
     let total = Math.round(scorePitch * 0.5 + scoreRhythm * 0.3 + scoreEmotion * 0.2);
 
-    // 鼓励性调整
+    // 鼓励性调整（优化后）
     // 如果音准和情绪都不错，即使节奏一般也不应太低
     if (scorePitch >= 80 && scoreEmotion >= 75) {
-      total = Math.max(total, 75);
+      total = Math.max(total, 80);
     }
-    // 如果节奏覆盖率超过50%，总分应该至少70分
-    if (coverage >= 0.5 && total < 70) {
+    // 如果节奏覆盖率超过60%，总分应该至少80分（范唱应能达到90+）
+    if (coverage >= 0.6 && total < 80) {
+      total = 80;
+    }
+    // 如果节奏覆盖率超过50%，总分应该至少75分
+    if (coverage >= 0.5 && total < 75) {
+      total = 75;
+    }
+    // 如果节奏覆盖率超过40%，总分应该至少70分
+    if (coverage >= 0.4 && total < 70) {
       total = 70;
-    }
-    // 如果节奏覆盖率超过40%，总分应该至少65分
-    if (coverage >= 0.4 && total < 65) {
-      total = 65;
     }
 
     // 保底分（鼓励为主）
-    if (coverage >= 0.3 && total < 60) {
-      total = 60;
+    if (coverage >= 0.3 && total < 65) {
+      total = 65;
     }
 
     const comments = generateDetailedComments(scorePitch, scoreRhythm, scoreEmotion, total, avgDiff, coverage);
@@ -794,7 +797,7 @@ export default function Home() {
       <div className="flex flex-1 flex-col items-center overflow-y-auto p-5 border-r border-[#333]">
         <div className="w-full max-w-[600px] rounded-2xl bg-[#1e1e20] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.4)] border border-[#333]">
           <h2 className="mb-5 flex items-center justify-between text-lg">
-            <span>🎹 智能声乐评测 <span style={{ fontSize: '12px', background: '#333', padding: '2px 6px', borderRadius: '4px', color: '#aaa' }}>V8.2 Full</span></span>
+            <span>🎹 智能声乐评测 <span style={{ fontSize: '12px', background: '#333', padding: '2px 6px', borderRadius: '4px', color: '#aaa' }}>V8.3 暖心版</span></span>
             <span className="text-base font-bold text-[#0a84ff]">
               {refBuffer ? `当前: 第 ${students.length + 1} 位同学` : '等待文件'}
             </span>
