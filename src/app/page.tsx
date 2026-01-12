@@ -6,8 +6,8 @@ import { useEffect, useRef, useState } from 'react';
 const CONFIG = {
   scrollSpeed: 100,
   analyzePrecision: 0.05,
-  tolerance: 1.5, // 容错值（原来2.5太宽松，改为1.5）
-  minVol: 0.02
+  tolerance: 2.0, // 容错值（调整为2.0，在1.5和2.5之间）
+  minVol: 0.015   // 降低音量阈值，更容易检测
 };
 
 // ================= 类型定义 =================
@@ -426,86 +426,93 @@ export default function Home() {
     const melodyData = appDataRef.current.melodyData;
 
     // ========== 音准评分（50%）==========
-    // 1. 命中率（70%权重）
+    // 1. 命中率（60%权重）
     const rawAccuracy = stats.frames > 0 ? stats.hits / stats.frames : 0;
-    let accuracyScore = rawAccuracy * 70;
+    let accuracyScore = rawAccuracy * 60;
 
-    // 2. 音高偏差（30%权重）
+    // 2. 音高偏差（40%权重）
     const avgDiff = stats.frames > 0 ? stats.diffSum / stats.frames : 0;
     let precisionScore = 0;
-    if (avgDiff <= 0.5) precisionScore = 30;      // 非常精准
-    else if (avgDiff <= 1.0) precisionScore = 25; // 很好
-    else if (avgDiff <= 1.5) precisionScore = 20; // 一般
-    else if (avgDiff <= 2.0) precisionScore = 15; // 较差
-    else if (avgDiff <= 2.5) precisionScore = 10; // 差
-    else precisionScore = 5;                      // 很差
+    if (avgDiff <= 0.8) precisionScore = 40;      // 非常精准
+    else if (avgDiff <= 1.2) precisionScore = 35; // 很好
+    else if (avgDiff <= 1.8) precisionScore = 30; // 不错
+    else if (avgDiff <= 2.5) precisionScore = 25; // 一般
+    else if (avgDiff <= 3.5) precisionScore = 20; // 较差
+    else precisionScore = 15;                     // 很差
 
     // 综合音准分
     let scorePitch = Math.round(accuracyScore + precisionScore);
 
-    // 严重偏差惩罚
-    if (avgDiff > 1.5) scorePitch -= 5;
-    if (avgDiff > 2.0) scorePitch -= 5;
-
-    // 最高不超过100，最低不低于30
-    scorePitch = Math.min(100, Math.max(30, scorePitch));
+    // 最高不超过100，最低不低于50
+    scorePitch = Math.min(100, Math.max(50, scorePitch));
 
     // ========== 节奏评分（30%）==========
     const teacherTotal = melodyData.length;
     const coverage = teacherTotal > 0 ? stats.frames / teacherTotal : 0;
 
-    // 覆盖率评分
+    // 覆盖率评分（调整为更宽松）
     let coverageScore = 0;
-    if (coverage >= 0.9) coverageScore = 30;   // 完整
-    else if (coverage >= 0.8) coverageScore = 27;
-    else if (coverage >= 0.7) coverageScore = 24;
-    else if (coverage >= 0.6) coverageScore = 20;
-    else if (coverage >= 0.5) coverageScore = 15;
-    else if (coverage >= 0.4) coverageScore = 10;
-    else coverageScore = 5;
+    if (coverage >= 0.7) coverageScore = 30;   // 很好
+    else if (coverage >= 0.6) coverageScore = 28;
+    else if (coverage >= 0.5) coverageScore = 25;
+    else if (coverage >= 0.4) coverageScore = 22;
+    else if (coverage >= 0.3) coverageScore = 18;
+    else if (coverage >= 0.2) coverageScore = 15;
+    else coverageScore = 12;                     // 基础分
 
     const scoreRhythm = coverageScore;
 
     // ========== 情绪评分（20%）==========
     const studentVol = stats.studentVol;
-    let scoreEmotion = 60; // 基础分
+    let scoreEmotion = 65; // 基础分（提高）
 
     if (studentVol.length > 0) {
       // 平均音量
       const volMean = studentVol.reduce((a, b) => a + b, 0) / studentVol.length;
 
       // 音量是否足够
-      if (volMean >= 0.05) scoreEmotion += 10;      // 音量充足
-      else if (volMean >= 0.03) scoreEmotion += 5; // 音量适中
-      else scoreEmotion += 0;                       // 音量偏小
+      if (volMean >= 0.04) scoreEmotion += 15;     // 音量充足
+      else if (volMean >= 0.02) scoreEmotion += 10; // 音量适中
+      else scoreEmotion += 5;                       // 音量偏小但给了基础分
 
       // 音量变化（动态范围）
       const volMin = Math.min(...studentVol);
       const volMax = Math.max(...studentVol);
       const dynamicRange = volMax - volMin;
 
-      if (dynamicRange >= 0.05) scoreEmotion += 10;      // 动态范围大，情感丰富
-      else if (dynamicRange >= 0.03) scoreEmotion += 5; // 动态范围适中
-      else scoreEmotion += 0;                           // 动态范围小，平淡
+      if (dynamicRange >= 0.04) scoreEmotion += 10;      // 动态范围大
+      else if (dynamicRange >= 0.02) scoreEmotion += 5; // 动态范围适中
+      // else scoreEmotion += 0; // 不扣分
 
-      // 稳定性（波动不能太大）
+      // 稳定性（适度波动加分）
       const volStd = Math.sqrt(studentVol.reduce((a, b) => a + Math.pow(b - volMean, 2), 0) / studentVol.length);
-      if (volStd > 0.03 && volStd < 0.08) scoreEmotion += 5; // 适度的波动
+      if (volStd > 0.02 && volStd < 0.06) scoreEmotion += 5;
     }
 
-    // 最高不超过100，最低不低于40
-    scoreEmotion = Math.min(100, Math.max(40, scoreEmotion));
+    // 最高不超过100，最低不低于65（提高最低分）
+    scoreEmotion = Math.min(100, Math.max(65, scoreEmotion));
 
     // ========== 综合评分 ==========
     let total = Math.round(scorePitch * 0.5 + scoreRhythm * 0.3 + scoreEmotion * 0.2);
 
-    // 调整：如果覆盖率太低，总分惩罚
-    if (coverage < 0.5) total = Math.max(55, total - 10);
-    if (coverage < 0.3) total = Math.max(40, total - 15);
+    // 鼓励性调整
+    // 如果音准和情绪都不错，即使节奏一般也不应太低
+    if (scorePitch >= 80 && scoreEmotion >= 75) {
+      total = Math.max(total, 75);
+    }
+    // 如果节奏覆盖率超过50%，总分应该至少70分
+    if (coverage >= 0.5 && total < 70) {
+      total = 70;
+    }
+    // 如果节奏覆盖率超过40%，总分应该至少65分
+    if (coverage >= 0.4 && total < 65) {
+      total = 65;
+    }
 
-    // 保底分
-    if (coverage > 0.6 && total < 60) total = 60;
-    if (coverage > 0.8 && total < 65) total = 65;
+    // 保底分（鼓励为主）
+    if (coverage >= 0.3 && total < 60) {
+      total = 60;
+    }
 
     const comments = generateDetailedComments(scorePitch, scoreRhythm, scoreEmotion, total, avgDiff, coverage);
     addStudentCard(total, scorePitch, scoreRhythm, scoreEmotion, comments, blob);
@@ -517,7 +524,7 @@ export default function Home() {
       perfect: [
         "音准极其精准！每个音都落在点上，专业级别的表现！",
         "音高控制能力超强，听感舒适，非常稳定！",
-        "音准完美！几乎没有偏差，完全可以达到专业水准！"
+        "音准完美！几乎没有偏差，完全达到了标准！"
       ],
       excellent: [
         "音准非常出色！绝大部分音都很准确，听感很棒！",
@@ -526,18 +533,18 @@ export default function Home() {
       ],
       good: [
         "音准不错，大部分音都在调上，继续加油！",
-        "整体音准良好，建议多加练习长音的稳定性！",
+        "整体音准良好，再多一点练习会更出色！",
         "音准基本达标，注意细微的音高变化会更好！"
       ],
       fair: [
         "音准有波动，建议多听原声，找准每个音的位置！",
-        "部分音高不够准确，需要加强音准训练！",
-        "音准需要改进，跟着范唱练习会有帮助！"
+        "部分音高需要调整，跟着范唱练习会有进步！",
+        "音准还在发展中，多听多唱是提升的关键！"
       ],
       poor: [
-        "音准偏差较大，建议每天进行音阶练习！",
-        "音高控制不够好，多听多唱是关键！",
-        "音准问题较明显，建议加强基础音准训练！"
+        "音准需要加强，建议每天进行音阶练习！",
+        "音高控制还有进步空间，多听多唱是关键！",
+        "音准需要练习，坚持跟着范唱唱会越来越好！"
       ]
     };
 
@@ -549,11 +556,11 @@ export default function Home() {
     else cPitch = pitchComments.poor[Math.floor(Math.random() * pitchComments.poor.length)];
 
     // 根据具体偏差补充评语
-    if (avgDiff > 2.0) {
-      cPitch += " 平均偏差较大，建议反复聆听标准录音。";
-    } else if (avgDiff > 1.5) {
-      cPitch += " 有些音高不够稳，注意气息控制。";
-    } else if (avgDiff < 0.5) {
+    if (avgDiff > 2.5) {
+      cPitch += " 继续练习，相信会越来越好！";
+    } else if (avgDiff > 1.8) {
+      cPitch += " 再细致一些会更完美。";
+    } else if (avgDiff < 0.8) {
       cPitch += " 平均偏差很小，非常难得！";
     }
 
@@ -575,14 +582,14 @@ export default function Home() {
         "节奏控制一般，注意听伴奏的节奏变化！"
       ],
       fair: [
-        "节奏有些不稳，部分段落跟不上！",
-        "节奏感需要加强，多听音乐多练习！",
-        "容易抢拍或拖拍，建议跟着节拍器练习！"
+        "节奏有些不稳，但整体表现还不错！继续努力！",
+        "节奏感在进步，多听音乐多练习会更好！",
+        "偶尔抢拍或拖拍，跟着节拍器练习会有帮助！"
       ],
       poor: [
-        "节奏问题较明显，需要加强节奏训练！",
-        "经常出现节奏脱节，建议多跟着原声练习！",
-        "节奏把握不足，需要基础节奏训练！"
+        "节奏需要加强，但你的态度很棒！继续加油！",
+        "节奏还在练习中，多跟着原声唱！",
+        "节奏把握需要提升，坚持练习一定能进步！"
       ]
     };
 
@@ -593,12 +600,12 @@ export default function Home() {
     else if (r >= 60) cRhythm = rhythmComments.fair[Math.floor(Math.random() * rhythmComments.fair.length)];
     else cRhythm = rhythmComments.poor[Math.floor(Math.random() * rhythmComments.poor.length)];
 
-    // 根据覆盖率补充评语
-    if (coverage < 0.5) {
-      cRhythm += " 有较多漏唱部分，完整度需要提高。";
-    } else if (coverage < 0.7) {
-      cRhythm += " 部分段落没跟上，要注意听伴奏。";
-    } else if (coverage >= 0.9) {
+    // 根据覆盖率补充评语（更加鼓励）
+    if (coverage < 0.3) {
+      cRhythm += " 可以尝试多跟着伴奏唱，完整度会提高！";
+    } else if (coverage < 0.5) {
+      cRhythm += " 继续跟上节奏，你会发现越来越容易！";
+    } else if (coverage >= 0.7) {
       cRhythm += " 完整度很高，非常棒！";
     }
 
@@ -621,18 +628,18 @@ export default function Home() {
       ],
       fair: [
         "声音较为平淡，可以尝试增加强弱对比！",
-        "情绪不够丰富，建议多听原唱的情感处理！",
-        "声音比较平，需要注意情感的表达！"
+        "情绪可以更丰富一些，建议多听原唱！",
+        "声音比较平，注意情感的表达会更好！"
       ],
       poor: [
-        "声音太小了，大胆唱出来！",
-        "情绪表达不足，需要更自信地演唱！",
-        "声音缺乏感染力，建议多练习情感表达！"
+        "大胆唱出来！自信一点会更动听！",
+        "情绪可以更饱满一些，继续加油！",
+        "声音需要更多情感投入，相信你会进步！"
       ],
       quiet: [
-        "声音有点小，下次可以更大声一些！",
-        "音量偏小，放开一点会更好听！",
-        "声音需要再响亮一些，不要害羞！"
+        "声音可以再大一些，不要害羞！",
+        "放开一点声音会更好听，加油！",
+        "声音需要再响亮一些，你可以的！"
       ]
     };
 
@@ -643,7 +650,7 @@ export default function Home() {
       ? appDataRef.current.stats.studentVol.reduce((a, b) => a + b, 0) / appDataRef.current.stats.studentVol.length
       : 0;
 
-    if (volMean < 0.02 && e < 60) {
+    if (volMean < 0.015 && e < 70) {
       cEmotion = emotionComments.quiet[Math.floor(Math.random() * emotionComments.quiet.length)];
     } else {
       if (e >= 95) cEmotion = emotionComments.perfect[Math.floor(Math.random() * emotionComments.perfect.length)];
@@ -668,15 +675,18 @@ export default function Home() {
     const name = `同学 ${String.fromCharCode(65 + data.students.length)}`;
     let rank = 'C';
     let color = '#ff453a';
+
+    // 调整等级标准，更加鼓励
     if (total >= 95) { rank = 'S+'; color = '#ffd60a'; } // 金色
     else if (total >= 90) { rank = 'S'; color = '#ffd60a'; }
     else if (total >= 85) { rank = 'A+'; color = '#30d158'; }
     else if (total >= 80) { rank = 'A'; color = '#30d158'; }
     else if (total >= 75) { rank = 'B+'; color = '#0a84ff'; }
     else if (total >= 70) { rank = 'B'; color = '#0a84ff'; }
-    else if (total >= 65) { rank = 'C+'; color = '#ff453a'; }
+    else if (total >= 65) { rank = 'B-'; color = '#0a84ff'; } // 改为B-，更鼓励
     else if (total >= 60) { rank = 'C'; color = '#ff453a'; }
-    else { rank = 'D'; color = '#ff6b6b'; } // 新增 D 等级
+    else if (total >= 55) { rank = 'C-'; color = '#ff453a'; }
+    else { rank = 'D'; color = '#ff6b6b'; }
 
     const card = (
       <div key={data.students.length} className="student-card" style={{ borderLeftColor: color }}>
