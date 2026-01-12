@@ -449,48 +449,51 @@ export default function Home() {
 
     // ========== 节奏评分（30%）==========
     const teacherTotal = melodyData.length;
-    // 覆盖率：学生演唱的帧数 / 参考音符总数
-    const coverage = teacherTotal > 0 ? stats.frames / teacherTotal : 0;
 
-    // 完成度：基于演唱时长判断
-    // stats.studentVol.length 是总采样次数，0.05是采样间隔，所以演唱时长 = length * 0.05
-    const duration = stats.studentVol.length * CONFIG.analyzePrecision;
+    // 完成度：基于演唱时长判断（最关键的指标）
+    // stats.studentVol.length 是总采样次数（rms > 0.01的帧数）
+    // 实际采样间隔约 46.4ms（2048 / 44100 ≈ 0.0464秒）
+    const sampleInterval = 2048 / 44100; // 实际采样间隔
+    const duration = stats.studentVol.length * sampleInterval;
     const refDuration = melodyData.length > 0 ? melodyData[melodyData.length - 1].time : 0;
     const completion = refDuration > 0 ? Math.min(duration / refDuration, 1) : 0;
 
-    // 节奏评分 = 覆盖率(70%) + 完成度(30%)，满分100分
-    // 降低满分门槛，范唱应该能得90-100分
-    let rhythmCoverageScore = 0;
-    if (coverage >= 0.7) rhythmCoverageScore = 70;   // 70%覆盖率即可满分
-    else if (coverage >= 0.65) rhythmCoverageScore = 68;
-    else if (coverage >= 0.6) rhythmCoverageScore = 65;
-    else if (coverage >= 0.55) rhythmCoverageScore = 62;
-    else if (coverage >= 0.5) rhythmCoverageScore = 58;
-    else if (coverage >= 0.45) rhythmCoverageScore = 55;
-    else if (coverage >= 0.4) rhythmCoverageScore = 52;
-    else if (coverage >= 0.35) rhythmCoverageScore = 48;
-    else if (coverage >= 0.3) rhythmCoverageScore = 45;
-    else if (coverage >= 0.25) rhythmCoverageScore = 40;
-    else if (coverage >= 0.2) rhythmCoverageScore = 35;
-    else if (coverage >= 0.15) rhythmCoverageScore = 30;
-    else if (coverage >= 0.1) rhythmCoverageScore = 28;
-    else rhythmCoverageScore = 25;
+    // 覆盖率：学生演唱的帧数 / 参考音符总数（辅助指标）
+    const coverage = teacherTotal > 0 ? stats.frames / teacherTotal : 0;
 
+    // 节奏评分 = 完成度(80%) + 覆盖率(20%)，满分100分
+    // 完成度是核心，覆盖率辅助，避免只唱几句也得高分
+
+    // 完成度评分（80%权重）
     let completionScore = 0;
-    if (completion >= 0.9) completionScore = 30;
-    else if (completion >= 0.85) completionScore = 29;
-    else if (completion >= 0.8) completionScore = 28;
-    else if (completion >= 0.75) completionScore = 27;
-    else if (completion >= 0.7) completionScore = 26;
-    else if (completion >= 0.65) completionScore = 25;
-    else if (completion >= 0.6) completionScore = 24;
-    else if (completion >= 0.5) completionScore = 22;
-    else if (completion >= 0.4) completionScore = 20;
-    else if (completion >= 0.3) completionScore = 18;
-    else if (coverage >= 0.2) completionScore = 15;
-    else completionScore = 10;
+    if (completion >= 0.95) completionScore = 80;      // 完整演唱
+    else if (completion >= 0.9) completionScore = 78;
+    else if (completion >= 0.85) completionScore = 75;
+    else if (completion >= 0.8) completionScore = 72;
+    else if (completion >= 0.75) completionScore = 68;
+    else if (completion >= 0.7) completionScore = 65;   // 范唱至少应该达到70%
+    else if (completion >= 0.65) completionScore = 60;
+    else if (completion >= 0.6) completionScore = 55;
+    else if (completion >= 0.55) completionScore = 50;
+    else if (completion >= 0.5) completionScore = 45;
+    else if (completion >= 0.45) completionScore = 40;
+    else if (completion >= 0.4) completionScore = 35;
+    else if (completion >= 0.35) completionScore = 30;
+    else if (completion >= 0.3) completionScore = 25;
+    else if (completion >= 0.2) completionScore = 20;
+    else completionScore = 15;
 
-    const scoreRhythm = Math.min(100, rhythmCoverageScore + completionScore);
+    // 覆盖率评分（20%权重）
+    let coverageScore = 0;
+    if (coverage >= 0.7) coverageScore = 20;      // 覆盖率很高
+    else if (coverage >= 0.6) coverageScore = 18;
+    else if (coverage >= 0.5) coverageScore = 16;
+    else if (coverage >= 0.4) coverageScore = 14;
+    else if (coverage >= 0.3) coverageScore = 12;
+    else if (coverage >= 0.2) coverageScore = 10;
+    else coverageScore = 8;
+
+    const scoreRhythm = Math.min(100, completionScore + coverageScore);
 
     // ========== 情绪评分（20%）==========
     const studentVol = stats.studentVol;
@@ -547,31 +550,40 @@ export default function Home() {
     // ========== 综合评分 ==========
     let total = Math.round(scorePitch * 0.5 + scoreRhythm * 0.3 + scoreEmotion * 0.2);
 
-    // 鼓励性调整（V8.6 平衡版）
-    // 只在演唱完成度较高时才给予高分保底
-    if (completion >= 0.7) {
-      // 演唱完成度70%以上
-      if (scorePitch >= 80 && scoreEmotion >= 75) {
+    // 鼓励性调整（V8.9 精准版）
+    // 只在演唱完成度较高时才给予高分保底，避免只唱几句也得高分
+    if (completion >= 0.8) {
+      // 演唱完成度80%以上（完整演唱）
+      if (scorePitch >= 85 && scoreEmotion >= 85) {
+        total = Math.max(total, 95);
+      }
+      if (scorePitch >= 80 && scoreEmotion >= 80) {
         total = Math.max(total, 90);
       }
-      if (coverage >= 0.5 && total < 90) {
+      if (scoreRhythm >= 80 && total < 90) {
         total = 90;
       }
-      if (coverage >= 0.4 && total < 85) {
+      if (scoreRhythm >= 70 && total < 85) {
         total = 85;
       }
-    } else if (completion >= 0.5) {
-      // 演唱完成度50%以上
-      if (scorePitch >= 80 && scoreEmotion >= 75) {
+    } else if (completion >= 0.7) {
+      // 演唱完成度70%以上（基本完整）
+      if (scorePitch >= 85 && scoreEmotion >= 85) {
+        total = Math.max(total, 90);
+      }
+      if (scorePitch >= 80 && scoreEmotion >= 80) {
         total = Math.max(total, 85);
       }
-      if (coverage >= 0.4 && total < 80) {
+      if (scoreRhythm >= 65 && total < 80) {
         total = 80;
       }
-    } else if (coverage >= 0.3 && total < 75) {
-      // 演唱完成度较低，只给予基础保底
-      total = 75;
+    } else if (completion >= 0.5) {
+      // 演唱完成度50%以上（一般）
+      if (scorePitch >= 80 && scoreEmotion >= 80) {
+        total = Math.max(total, 75);
+      }
     }
+    // 完成度低于50%的不给予额外保底
 
     const comments = generateDetailedComments(scorePitch, scoreRhythm, scoreEmotion, total, avgDiff, coverage);
     addStudentCard(total, scorePitch, scoreRhythm, scoreEmotion, comments, blob);
@@ -853,7 +865,7 @@ export default function Home() {
       <div className="flex flex-1 flex-col items-center overflow-y-auto p-5 border-r border-[#333]">
         <div className="w-full max-w-[600px] rounded-2xl bg-[#1e1e20] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.4)] border border-[#333]">
           <h2 className="mb-5 flex items-center justify-between text-lg">
-            <span>🎹 智能声乐评测 <span style={{ fontSize: '12px', background: '#333', padding: '2px 6px', borderRadius: '4px', color: '#aaa' }}>V8.8 完美版</span></span>
+            <span>🎹 智能声乐评测 <span style={{ fontSize: '12px', background: '#333', padding: '2px 6px', borderRadius: '4px', color: '#aaa' }}>V8.9 精准版</span></span>
             <span className="text-base font-bold text-[#0a84ff]">
               {refBuffer ? `当前: 第 ${students.length + 1} 位同学` : '等待文件'}
             </span>
