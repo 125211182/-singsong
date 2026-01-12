@@ -27,8 +27,7 @@ interface ScoreComments {
   emotion: string;
 }
 
-// ================= 全局状态 =================
-interface AppState {
+interface AppData {
   ctx: AudioContext | null;
   analyser: AnalyserNode | null;
   refBuffer: AudioBuffer | null;
@@ -47,18 +46,15 @@ interface AppState {
   recorder: MediaRecorder | null;
   chunks: Blob[];
   students: Student[];
-  scoreImage: string | null;
 }
 
 export default function Home() {
-  // Refs
+  // Refs (用于可变数据，避免闭包问题)
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileRefRef = useRef<HTMLInputElement>(null);
   const fileAccRef = useRef<HTMLInputElement>(null);
   const fileScoreRef = useRef<HTMLInputElement>(null);
-
-  // State
-  const [app, setApp] = useState<AppState>({
+  const appDataRef = useRef<AppData>({
     ctx: null,
     analyser: null,
     refBuffer: null,
@@ -76,16 +72,17 @@ export default function Home() {
     currentSource: null,
     recorder: null,
     chunks: [],
-    students: [],
-    scoreImage: null
+    students: []
   });
 
+  // State (用于触发重新渲染)
   const [realtimeScore, setRealtimeScore] = useState('--');
   const [realtimeStatus, setRealtimeStatus] = useState('Ready');
   const [loading, setLoading] = useState(false);
   const [loadingText, setLoadingText] = useState('Processing...');
   const [studentCards, setStudentCards] = useState<React.ReactElement[]>([]);
-  const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [scoreImage, setScoreImage] = useState<string | null>(null);
+  const [updateCounter, setUpdateCounter] = useState(0); // 用于触发 UI 更新
 
   // ================= 1. 工具函数 =================
   const getRMS = (buf: Float32Array): number => {
@@ -172,7 +169,7 @@ export default function Home() {
     if (!file) return;
 
     showLoading(true, '正在分析音频...');
-    const ctx = app.ctx || new (window.AudioContext || (window as any).webkitAudioContext)();
+    const ctx = appDataRef.current.ctx || new (window.AudioContext || (window as any).webkitAudioContext)();
 
     try {
       const ab = await file.arrayBuffer();
@@ -180,23 +177,17 @@ export default function Home() {
 
       if (type === 'ref') {
         const melodyData = extractMelody(buffer);
-        setApp(prev => ({
-          ...prev,
-          ctx,
-          refBuffer: buffer,
-          melodyData
-        }));
+        appDataRef.current.ctx = ctx;
+        appDataRef.current.refBuffer = buffer;
+        appDataRef.current.melodyData = melodyData;
+        setUpdateCounter(prev => prev + 1);
         // 上传干声后启动预览模式
-        setIsPreviewMode(true);
         setTimeout(() => drawLoop(true), 100);
       } else {
-        setApp(prev => ({
-          ...prev,
-          ctx,
-          accBuffer: buffer
-        }));
+        appDataRef.current.ctx = ctx;
+        appDataRef.current.accBuffer = buffer;
+        setUpdateCounter(prev => prev + 1);
       }
-      updateUIState();
     } catch (e) {
       console.error('文件加载失败:', e);
       alert('文件加载失败');
@@ -223,34 +214,33 @@ export default function Home() {
 
     const reader = new FileReader();
     reader.onload = (evt) => {
-      setApp(prev => ({
-        ...prev,
-        scoreImage: evt.target?.result as string
-      }));
+      setScoreImage(evt.target?.result as string);
     };
     reader.readAsDataURL(file);
   };
 
   // ================= 4. 开始/结束评测 =================
   const startSession = async () => {
-    if (app.students.length >= 4) return;
-    if (!app.ctx || !app.refBuffer) return;
+    const data = appDataRef.current;
+    if (data.students.length >= 4) return;
+    if (!data.ctx || !data.refBuffer) return;
 
-    if (app.ctx.state === 'suspended') {
-      await app.ctx.resume();
+    if (data.ctx.state === 'suspended') {
+      await data.ctx.resume();
     }
 
-    const source = app.ctx.createBufferSource();
-    source.buffer = app.accBuffer || app.refBuffer;
-    source.connect(app.ctx.destination);
+    const source = data.ctx.createBufferSource();
+    source.buffer = data.accBuffer || data.refBuffer;
+    source.connect(data.ctx.destination);
     source.start(0);
 
-    setApp(prev => ({ ...prev, currentSource: source, startTime: app.ctx!.currentTime }));
+    data.currentSource = source;
+    data.startTime = data.ctx.currentTime;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const micSource = app.ctx!.createMediaStreamSource(stream);
-      const analyser = app.ctx!.createAnalyser();
+      const micSource = data.ctx.createMediaStreamSource(stream);
+      const analyser = data.ctx.createAnalyser();
       analyser.fftSize = 2048;
       micSource.connect(analyser);
 
@@ -259,24 +249,21 @@ export default function Home() {
       recorder.ondataavailable = (e) => chunks.push(e.data);
       recorder.start();
 
-      setApp(prev => ({
-        ...prev,
-        isPlaying: true,
-        analyser,
-        recorder,
-        chunks,
-        stats: {
-          frames: 0,
-          hits: 0,
-          diffSum: 0,
-          teacherEnergy: [],
-          studentVol: []
-        }
-      }));
+      data.analyser = analyser;
+      data.recorder = recorder;
+      data.chunks = chunks;
+      data.isPlaying = true;
+      data.stats = {
+        frames: 0,
+        hits: 0,
+        diffSum: 0,
+        teacherEnergy: [],
+        studentVol: []
+      };
 
-      setIsPreviewMode(false);
       setRealtimeStatus('Recording...');
       setRealtimeScore('--');
+      setUpdateCounter(prev => prev + 1);
 
       source.onended = stopSession;
       drawLoop();
@@ -287,15 +274,17 @@ export default function Home() {
   };
 
   const stopSession = () => {
-    if (!app.isPlaying) return;
+    const data = appDataRef.current;
+    if (!data.isPlaying) return;
 
-    setApp(prev => ({ ...prev, isPlaying: false }));
+    data.isPlaying = false;
+    setUpdateCounter(prev => prev + 1);
 
-    if (app.currentSource) app.currentSource.stop();
-    if (app.recorder && app.recorder.state !== 'inactive') {
-      app.recorder.stop();
-      app.recorder.onstop = () => {
-        const blob = new Blob(app.chunks, { type: 'audio/webm' });
+    if (data.currentSource) data.currentSource.stop();
+    if (data.recorder && data.recorder.state !== 'inactive') {
+      data.recorder.stop();
+      data.recorder.onstop = () => {
+        const blob = new Blob(data.chunks, { type: 'audio/webm' });
         calculateBalancedScore(blob);
         setRealtimeStatus('Finished');
       };
@@ -304,7 +293,11 @@ export default function Home() {
 
   // ================= 5. 实时绘制 =================
   const drawLoop = (preview = false) => {
-    if (!preview && !app.isPlaying) return;
+    const data = appDataRef.current;
+
+    // 预览模式：只显示旋律线，不停止
+    // 实时模式：正在播放时才继续
+    if (!preview && !data.isPlaying) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -314,16 +307,23 @@ export default function Home() {
 
     const w = canvas.width;
     const h = canvas.height;
-    const now = app.ctx ? (app.ctx.currentTime - app.startTime) : 0;
+
+    // 计算当前时间
+    // 预览模式：now = 0（静态显示）
+    // 实时模式：now = ctx.currentTime - startTime
+    let now = 0;
+    if (!preview && data.ctx) {
+      now = data.ctx.currentTime - data.startTime;
+    }
 
     // 清空画布
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, w, h);
 
-    // 绘制波形
-    if (app.isPlaying && app.analyser) {
-      const wave = new Uint8Array(app.analyser.frequencyBinCount);
-      app.analyser.getByteTimeDomainData(wave);
+    // 绘制波形（仅实时模式）
+    if (!preview && data.analyser) {
+      const wave = new Uint8Array(data.analyser.frequencyBinCount);
+      data.analyser.getByteTimeDomainData(wave);
       ctx.lineWidth = 2;
       ctx.strokeStyle = 'rgba(10, 132, 255, 0.3)';
       ctx.beginPath();
@@ -344,7 +344,7 @@ export default function Home() {
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
     let currentNote: MelodyPoint | undefined;
 
-    const melodyData: MelodyPoint[] = app.melodyData;
+    const melodyData = data.melodyData;
     for (let i = 0; i < melodyData.length; i++) {
       const p = melodyData[i];
       const x = centerX + (p.time - now) * CONFIG.scrollSpeed;
@@ -356,26 +356,17 @@ export default function Home() {
     }
 
     // 分析用户音高（仅非预览模式）
-    if (!preview && app.isPlaying && app.analyser) {
+    if (!preview && data.analyser) {
       const buffer = new Float32Array(2048);
-      app.analyser.getFloatTimeDomainData(buffer);
+      data.analyser.getFloatTimeDomainData(buffer);
       const rms = getRMS(buffer);
-      const freq = autoCorrelate(buffer, app.ctx!.sampleRate);
+      const freq = autoCorrelate(buffer, data.ctx!.sampleRate);
 
       if (rms > 0.01) {
-        setApp(prev => {
-          const newStudentVol = [...prev.stats.studentVol, rms];
-          return {
-            ...prev,
-            stats: { ...prev.stats, studentVol: newStudentVol }
-          };
-        });
+        data.stats.studentVol.push(rms);
 
         if (currentNote) {
-          setApp(prev => ({
-            ...prev,
-            stats: { ...prev.stats, frames: prev.stats.frames + 1 }
-          }));
+          data.stats.frames = data.stats.frames + 1;
         }
 
         if (freq && freq > 60) {
@@ -388,19 +379,13 @@ export default function Home() {
             const octOffset = 12 * Math.round(diff / 12);
             const normDiff = Math.abs(currentNote.midi - (userMidi + octOffset));
 
-            setApp(prev => ({
-              ...prev,
-              stats: { ...prev.stats, diffSum: prev.stats.diffSum + normDiff }
-            }));
+            data.stats.diffSum = data.stats.diffSum + normDiff;
 
             displayMidi = userMidi + octOffset;
 
             if (normDiff < CONFIG.tolerance) {
               isHit = true;
-              setApp(prev => ({
-                ...prev,
-                stats: { ...prev.stats, hits: prev.stats.hits + 1 }
-              }));
+              data.stats.hits = data.stats.hits + 1;
               setRealtimeScore('✨');
               if (normDiff < 1.0) displayMidi = currentNote.midi;
             } else {
@@ -427,27 +412,31 @@ export default function Home() {
     ctx.setLineDash([5, 5]);
     ctx.stroke();
 
+    // 继续循环
     if (preview) {
       requestAnimationFrame(() => drawLoop(true));
-    } else if (app.isPlaying) {
+    } else if (data.isPlaying) {
       requestAnimationFrame(() => drawLoop(false));
     }
   };
 
   // ================= 6. 评分算法 =================
   const calculateBalancedScore = (blob: Blob) => {
-    const rawAccuracy = app.stats.frames > 0 ? app.stats.hits / app.stats.frames : 0;
+    const stats = appDataRef.current.stats;
+    const melodyData = appDataRef.current.melodyData;
+
+    const rawAccuracy = stats.frames > 0 ? stats.hits / stats.frames : 0;
     let scorePitch = 50 + Math.round(rawAccuracy * 50);
-    const avgDiff = app.stats.frames > 0 ? app.stats.diffSum / app.stats.frames : 0;
+    const avgDiff = stats.frames > 0 ? stats.diffSum / stats.frames : 0;
     if (avgDiff > 1.5) scorePitch -= 5;
     scorePitch = Math.min(100, Math.round(scorePitch));
 
-    const teacherTotal = app.melodyData.length;
-    const coverage = teacherTotal > 0 ? app.stats.frames / teacherTotal : 0;
+    const teacherTotal = melodyData.length;
+    const coverage = teacherTotal > 0 ? stats.frames / teacherTotal : 0;
     const scoreRhythm = Math.min(100, Math.round((coverage / 0.8) * 100));
 
-    const volMean = app.stats.studentVol.reduce((a, b) => a + b, 0) / (app.stats.studentVol.length || 1);
-    const volVar = app.stats.studentVol.reduce((a, b) => a + Math.pow(b - volMean, 2), 0) / (app.stats.studentVol.length || 1);
+    const volMean = stats.studentVol.reduce((a, b) => a + b, 0) / (stats.studentVol.length || 1);
+    const volVar = stats.studentVol.reduce((a, b) => a + Math.pow(b - volMean, 2), 0) / (stats.studentVol.length || 1);
     const scoreEmotion = Math.min(100, Math.round((Math.sqrt(volVar) / 0.02) * 40 + 60));
 
     let total = Math.round(scorePitch * 0.5 + scoreRhythm * 0.3 + scoreEmotion * 0.2);
@@ -485,7 +474,8 @@ export default function Home() {
     comments: ScoreComments,
     blob: Blob
   ) => {
-    const name = `同学 ${String.fromCharCode(65 + app.students.length)}`;
+    const data = appDataRef.current;
+    const name = `同学 ${String.fromCharCode(65 + data.students.length)}`;
     let rank = 'C';
     let color = '#ff453a';
     if (total >= 90) { rank = 'S'; color = '#ffd60a'; }
@@ -493,7 +483,7 @@ export default function Home() {
     else if (total >= 60) { rank = 'B'; color = '#0a84ff'; }
 
     const card = (
-      <div key={app.students.length} className="student-card" style={{ borderLeftColor: color }}>
+      <div key={data.students.length} className="student-card" style={{ borderLeftColor: color }}>
         <div className="card-top">
           <div className="stu-name">{name} <span className="rank-badge" style={{ background: color }}>{rank}</span></div>
           <div className="stu-total" style={{ color: color }}>{total}</div>
@@ -525,32 +515,23 @@ export default function Home() {
     );
 
     setStudentCards(prev => [card, ...prev]);
-    setApp(prev => ({
-      ...prev,
-      students: [...prev.students, { name }]
-    }));
-    updateUIState();
+    data.students.push({ name });
+    setUpdateCounter(prev => prev + 1);
   };
 
   const resetClassroom = () => {
     if (!confirm('确定要清空记录吗？')) return;
-    setApp(prev => ({
-      ...prev,
-      students: [],
-      stats: {
-        frames: 0,
-        hits: 0,
-        diffSum: 0,
-        teacherEnergy: [],
-        studentVol: []
-      }
-    }));
+    const data = appDataRef.current;
+    data.students = [];
+    data.stats = {
+      frames: 0,
+      hits: 0,
+      diffSum: 0,
+      teacherEnergy: [],
+      studentVol: []
+    };
     setStudentCards([]);
-    updateUIState();
-  };
-
-  const updateUIState = () => {
-    // 更新UI状态
+    setUpdateCounter(prev => prev + 1);
   };
 
   // ================= 初始化画布 =================
@@ -561,6 +542,10 @@ export default function Home() {
       canvas.height = canvas.offsetHeight;
     }
   }, []);
+
+  const refBuffer = appDataRef.current.refBuffer;
+  const accBuffer = appDataRef.current.accBuffer;
+  const students = appDataRef.current.students;
 
   return (
     <div className="flex min-h-screen bg-[#121214] text-[#e0e0e0]">
@@ -577,7 +562,7 @@ export default function Home() {
         <div className="border-b border-[#333] bg-[#1c1c1f] px-5 py-5">
           <div className="flex items-center justify-between text-base font-bold text-white">
             <span>课堂记录</span>
-            <span className="text-[#0a84ff]">{app.students.length} / 4</span>
+            <span className="text-[#0a84ff]">{students.length} / 4</span>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto px-[15px] py-[15px]">
@@ -605,33 +590,33 @@ export default function Home() {
           <h2 className="mb-5 flex items-center justify-between text-lg">
             <span>🎹 智能声乐评测 <span style={{ fontSize: '12px', background: '#333', padding: '2px 6px', borderRadius: '4px', color: '#aaa' }}>V8.2 Full</span></span>
             <span className="text-base font-bold text-[#0a84ff]">
-              {app.refBuffer ? `当前: 第 ${app.students.length + 1} 位同学` : '等待文件'}
+              {refBuffer ? `当前: 第 ${students.length + 1} 位同学` : '等待文件'}
             </span>
           </h2>
 
           <div className="mb-5 grid grid-cols-3 gap-[10px]">
             <div
               onClick={() => fileRefRef.current?.click()}
-              className={`track-slot ${app.refBuffer ? 'loaded' : ''}`}
+              className={`track-slot ${refBuffer ? 'loaded' : ''}`}
             >
-              <span className="icon-status">{app.refBuffer ? '✅' : '🗣️'}</span>
-              <span className="slot-label">{app.refBuffer ? '干声已就绪' : '1. 干声(必选)'}</span>
+              <span className="icon-status">{refBuffer ? '✅' : '🗣️'}</span>
+              <span className="slot-label">{refBuffer ? '干声已就绪' : '1. 干声(必选)'}</span>
               <span className="slot-desc">AI分析旋律</span>
             </div>
             <div
               onClick={() => fileAccRef.current?.click()}
-              className={`track-slot ${app.accBuffer ? 'loaded' : ''}`}
+              className={`track-slot ${accBuffer ? 'loaded' : ''}`}
             >
-              <span className="icon-status">{app.accBuffer ? '✅' : '🎼'}</span>
-              <span className="slot-label">{app.accBuffer ? '伴奏已就绪' : '2. 伴奏(可选)'}</span>
+              <span className="icon-status">{accBuffer ? '✅' : '🎼'}</span>
+              <span className="slot-label">{accBuffer ? '伴奏已就绪' : '2. 伴奏(可选)'}</span>
               <span className="slot-desc">背景播放</span>
             </div>
             <div
               onClick={() => fileScoreRef.current?.click()}
-              className={`track-slot ${app.scoreImage ? 'loaded' : ''}`}
+              className={`track-slot ${scoreImage ? 'loaded' : ''}`}
             >
-              <span className="icon-status">{app.scoreImage ? '✅' : '📄'}</span>
-              <span className="slot-label">{app.scoreImage ? '乐谱已加载' : '3. 乐谱(可选)'}</span>
+              <span className="icon-status">{scoreImage ? '✅' : '📄'}</span>
+              <span className="slot-label">{scoreImage ? '乐谱已加载' : '3. 乐谱(可选)'}</span>
               <span className="slot-desc">右侧显示</span>
             </div>
           </div>
@@ -671,14 +656,14 @@ export default function Home() {
           <div className="grid grid-cols-2 gap-[15px]">
             <button
               onClick={startSession}
-              disabled={!app.refBuffer || app.students.length >= 4 || app.isPlaying}
+              disabled={!refBuffer || students.length >= 4}
               className="btn btn-start"
             >
-              🎙️ 第 {app.students.length + 1} 位同学 (开始)
+              🎙️ 第 {students.length + 1} 位同学 (开始)
             </button>
             <button
               onClick={stopSession}
-              disabled={!app.isPlaying}
+              disabled={!appDataRef.current.isPlaying}
               className="btn btn-stop"
             >
               ⏹ 结束评测
@@ -694,8 +679,8 @@ export default function Home() {
           <span className="text-[12px] text-[#666]">支持滚动查看</span>
         </div>
         <div className="flex-1 overflow-y-auto p-[10px]" style={{ backgroundImage: 'radial-gradient(#222 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
-          {app.scoreImage ? (
-            <img src={app.scoreImage} alt="Sheet Music" className="w-full rounded-lg shadow-[0_4px_10px_rgba(0,0,0,0.5)]" />
+          {scoreImage ? (
+            <img src={scoreImage} alt="Sheet Music" className="w-full rounded-lg shadow-[0_4px_10px_rgba(0,0,0,0.5)]" />
           ) : (
             <div className="mt-[50%] text-center text-[#555] -translate-y-1/2">
               未上传乐谱<br />
