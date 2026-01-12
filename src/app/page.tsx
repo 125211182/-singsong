@@ -450,14 +450,11 @@ export default function Home() {
     const teacherTotal = melodyData.length;
     const coverage = teacherTotal > 0 ? stats.frames / teacherTotal : 0;
 
-    // 覆盖率评分（大幅放宽，非常宽松）
-    let coverageScore = 25; // 基础分直接给25分
+    // 覆盖率评分（极度宽松）
+    let coverageScore = 28; // 基础分直接给28分
 
-    if (coverage >= 0.5) coverageScore = 30;   // 50%覆盖率即可满分
-    else if (coverage >= 0.4) coverageScore = 29;
-    else if (coverage >= 0.3) coverageScore = 28;
-    else if (coverage >= 0.2) coverageScore = 27;
-    else if (coverage >= 0.1) coverageScore = 26;
+    if (coverage >= 0.4) coverageScore = 30;   // 40%覆盖率即可满分
+    else if (coverage >= 0.3) coverageScore = 29;
 
     const scoreRhythm = coverageScore;
 
@@ -494,27 +491,27 @@ export default function Home() {
     // ========== 综合评分 ==========
     let total = Math.round(scorePitch * 0.5 + scoreRhythm * 0.3 + scoreEmotion * 0.2);
 
-    // 鼓励性调整（V8.4 进一步放宽）
+    // 鼓励性调整（V8.5 极度放宽）
     // 如果音准和情绪都不错，即使节奏一般也不应太低
     if (scorePitch >= 80 && scoreEmotion >= 75) {
-      total = Math.max(total, 85);
+      total = Math.max(total, 90);
     }
-    // 如果节奏覆盖率超过50%，总分应该至少85分（范唱应能达到90+）
-    if (coverage >= 0.5 && total < 85) {
+    // 如果节奏覆盖率超过40%，总分应该至少90分（范唱应能达到90+）
+    if (coverage >= 0.4 && total < 90) {
+      total = 90;
+    }
+    // 如果节奏覆盖率超过30%，总分应该至少85分
+    if (coverage >= 0.3 && total < 85) {
       total = 85;
     }
-    // 如果节奏覆盖率超过40%，总分应该至少80分
-    if (coverage >= 0.4 && total < 80) {
+    // 如果节奏覆盖率超过20%，总分应该至少80分
+    if (coverage >= 0.2 && total < 80) {
       total = 80;
-    }
-    // 如果节奏覆盖率超过30%，总分应该至少75分
-    if (coverage >= 0.3 && total < 75) {
-      total = 75;
     }
 
     // 保底分（鼓励为主）
-    if (coverage >= 0.2 && total < 70) {
-      total = 70;
+    if (coverage >= 0.1 && total < 75) {
+      total = 75;
     }
 
     const comments = generateDetailedComments(scorePitch, scoreRhythm, scoreEmotion, total, avgDiff, coverage);
@@ -797,7 +794,7 @@ export default function Home() {
       <div className="flex flex-1 flex-col items-center overflow-y-auto p-5 border-r border-[#333]">
         <div className="w-full max-w-[600px] rounded-2xl bg-[#1e1e20] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.4)] border border-[#333]">
           <h2 className="mb-5 flex items-center justify-between text-lg">
-            <span>🎹 智能声乐评测 <span style={{ fontSize: '12px', background: '#333', padding: '2px 6px', borderRadius: '4px', color: '#aaa' }}>V8.4 超暖版</span></span>
+            <span>🎹 智能声乐评测 <span style={{ fontSize: '12px', background: '#333', padding: '2px 6px', borderRadius: '4px', color: '#aaa' }}>V8.5 极暖版</span></span>
             <span className="text-base font-bold text-[#0a84ff]">
               {refBuffer ? `当前: 第 ${students.length + 1} 位同学` : '等待文件'}
             </span>
