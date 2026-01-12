@@ -14,6 +14,7 @@ const CONFIG = {
 interface MelodyPoint {
   time: number;
   midi: number;
+  vol: number;
 }
 
 interface Student {
@@ -55,7 +56,6 @@ export default function Home() {
   const fileRefRef = useRef<HTMLInputElement>(null);
   const fileAccRef = useRef<HTMLInputElement>(null);
   const fileScoreRef = useRef<HTMLInputElement>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
 
   // State
   const [app, setApp] = useState<AppState>({
@@ -85,65 +85,136 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [loadingText, setLoadingText] = useState('Processing...');
   const [studentCards, setStudentCards] = useState<React.ReactElement[]>([]);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
 
-  // ================= 1. 文件上传处理 =================
-  const handleRefUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  // ================= 1. 工具函数 =================
+  const getRMS = (buf: Float32Array): number => {
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) {
+      sum += buf[i] * buf[i];
+    }
+    return Math.sqrt(sum / buf.length);
+  };
+
+  const autoCorrelate = (buf: Float32Array, sr: number): number | null => {
+    const rms = getRMS(buf);
+    if (rms < 0.01) return null;
+
+    let size = buf.length;
+    let r1 = 0, r2 = size - 1, thres = 0.2;
+    for (let i = 0; i < size / 2; i++) {
+      if (Math.abs(buf[i]) < thres) { r1 = i; break; }
+    }
+    for (let i = 1; i < size / 2; i++) {
+      if (Math.abs(buf[size - i]) < thres) { r2 = size - i; break; }
+    }
+
+    buf = buf.slice(r1, r2);
+    size = buf.length;
+
+    let c = new Array(size).fill(0);
+    for (let i = 0; i < size; i++) {
+      for (let j = 0; j < size - i; j++) {
+        c[i] += buf[j] * buf[j + i];
+      }
+    }
+
+    let d = 0;
+    while (c[d] > c[d + 1]) d++;
+
+    let maxval = -1, maxpos = -1;
+    for (let i = d; i < size; i++) {
+      if (c[i] > maxval) { maxval = c[i]; maxpos = i; }
+    }
+
+    return sr / maxpos;
+  };
+
+  const freqToMidi = (f: number): number => {
+    return 69 + 12 * Math.log2(f / 440);
+  };
+
+  const getMidiY = (midi: number, h: number): number => {
+    return h - ((midi - 45) / (85 - 45)) * h;
+  };
+
+  const showLoading = (show: boolean, text: string = 'Processing...') => {
+    setLoading(show);
+    setLoadingText(text);
+  };
+
+  // ================= 2. 旋律提取 =================
+  const extractMelody = (buffer: AudioBuffer): MelodyPoint[] => {
+    const data = buffer.getChannelData(0);
+    const sr = buffer.sampleRate;
+    const step = Math.floor(sr * CONFIG.analyzePrecision);
+    const result: MelodyPoint[] = [];
+
+    for (let i = 0; i < data.length; i += step) {
+      const slice = data.slice(i, i + 2048);
+      const rms = getRMS(slice);
+      if (rms > 0.015) {
+        const freq = autoCorrelate(slice, sr);
+        if (freq && freq > 60 && freq < 1100) {
+          result.push({
+            time: i / sr,
+            midi: freqToMidi(freq),
+            vol: rms
+          });
+        }
+      }
+    }
+    return result;
+  };
+
+  // ================= 3. 文件上传处理 =================
+  const loadFile = async (file: File | null, type: 'ref' | 'acc') => {
     if (!file) return;
 
-    showLoading(true, '正在分析旋律...');
+    showLoading(true, '正在分析音频...');
+    const ctx = app.ctx || new (window.AudioContext || (window as any).webkitAudioContext)();
+
     try {
-      const arrayBuffer = await file.arrayBuffer();
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const buffer = await ctx.decodeAudioData(arrayBuffer);
+      const ab = await file.arrayBuffer();
+      const buffer = await ctx.decodeAudioData(ab);
 
-      // 提取旋律数据 (简化版：使用 RMS 能量峰值)
-      const melodyData = extractMelodyFromBuffer(buffer, ctx);
-
-      setApp(prev => ({
-        ...prev,
-        ctx,
-        refBuffer: buffer,
-        melodyData,
-        students: [],
-        stats: {
-          frames: 0,
-          hits: 0,
-          diffSum: 0,
-          teacherEnergy: [],
-          studentVol: []
-        }
-      }));
-      setStudentCards([]);
+      if (type === 'ref') {
+        const melodyData = extractMelody(buffer);
+        setApp(prev => ({
+          ...prev,
+          ctx,
+          refBuffer: buffer,
+          melodyData
+        }));
+        // 上传干声后启动预览模式
+        setIsPreviewMode(true);
+        setTimeout(() => drawLoop(true), 100);
+      } else {
+        setApp(prev => ({
+          ...prev,
+          ctx,
+          accBuffer: buffer
+        }));
+      }
       updateUIState();
-    } catch (err) {
-      console.error('解析失败:', err);
-      alert('音频解析失败，请重试');
+    } catch (e) {
+      console.error('文件加载失败:', e);
+      alert('文件加载失败');
     }
+
     showLoading(false);
   };
 
-  const handleAccUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleRefUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    loadFile(file, 'ref');
+    if (e.target) e.target.value = '';
+  };
 
-    showLoading(true, '正在加载伴奏...');
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const ctx = app.ctx || new (window.AudioContext || (window as any).webkitAudioContext)();
-      const buffer = await ctx.decodeAudioData(arrayBuffer);
-
-      setApp(prev => ({
-        ...prev,
-        ctx,
-        accBuffer: buffer
-      }));
-      updateUIState();
-    } catch (err) {
-      console.error('加载伴奏失败:', err);
-      alert('伴奏加载失败，请重试');
-    }
-    showLoading(false);
+  const handleAccUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    loadFile(file, 'acc');
+    if (e.target) e.target.value = '';
   };
 
   const handleScoreUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -151,123 +222,49 @@ export default function Home() {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = (evt) => {
       setApp(prev => ({
         ...prev,
-        scoreImage: e.target?.result as string
+        scoreImage: evt.target?.result as string
       }));
     };
     reader.readAsDataURL(file);
   };
 
-  // ================= 2. 旋律提取 (简化版) =================
-  const extractMelodyFromBuffer = (buffer: AudioBuffer, ctx: AudioContext): MelodyPoint[] => {
-    const melody: MelodyPoint[] = [];
-    const channelData = buffer.getChannelData(0);
-    const sampleRate = buffer.sampleRate;
-    const hopSize = Math.floor(sampleRate * 0.05); // 每 50ms 分析一次
-
-    for (let i = 0; i < channelData.length; i += hopSize) {
-      // 简化版：使用能量和音高估算
-      const segment = channelData.slice(i, Math.min(i + hopSize, channelData.length));
-      const rms = calculateRMS(segment);
-      const freq = calculateFrequency(segment, sampleRate);
-
-      if (rms > 0.01 && freq !== null && freq > 60) {
-        const midi = 69 + 12 * Math.log2(freq / 440);
-        melody.push({
-          time: i / sampleRate,
-          midi: Math.round(midi)
-        });
-      }
-    }
-
-    return melody;
-  };
-
-  const calculateRMS = (data: Float32Array): number => {
-    let sum = 0;
-    for (let i = 0; i < data.length; i++) {
-      sum += data[i] * data[i];
-    }
-    return Math.sqrt(sum / data.length);
-  };
-
-  const calculateFrequency = (data: Float32Array, sampleRate: number): number | null => {
-    const rms = calculateRMS(data);
-    if (rms < 0.01) return null;
-
-    // 简化的自相关算法
-    let size = data.length;
-    let bestOffset = -1;
-    let bestCorrelation = 0;
-    let rms2 = 0;
-
-    for (let i = 0; i < size; i++) {
-      rms2 += data[i] * data[i];
-    }
-    rms2 = Math.sqrt(rms2 / size);
-
-    if (rms2 < 0.01) return null;
-
-    let lastCorrelation = 1;
-    for (let offset = 1; offset < size; offset++) {
-      let correlation = 0;
-      for (let i = 0; i < size - offset; i++) {
-        correlation += Math.abs((data[i] - rms2) * (data[i + offset] - rms2));
-      }
-      correlation = 1 - correlation / (size * rms2 * rms2);
-
-      if (correlation > 0.9 && correlation > lastCorrelation) {
-        const foundCorrelation = correlation;
-        if (foundCorrelation > bestCorrelation) {
-          bestCorrelation = foundCorrelation;
-          bestOffset = offset;
-        }
-      }
-      lastCorrelation = correlation;
-    }
-
-    if (bestOffset === -1) return null;
-    return sampleRate / bestOffset;
-  };
-
-  // ================= 3. 开始/结束评测 =================
+  // ================= 4. 开始/结束评测 =================
   const startSession = async () => {
+    if (app.students.length >= 4) return;
     if (!app.ctx || !app.refBuffer) return;
 
-    showLoading(true, '正在启动...');
-    try {
-      // 获取麦克风流
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const source = app.ctx.createMediaStreamSource(stream);
-      const analyser = app.ctx.createAnalyser();
-      analyser.fftSize = 2048;
-      source.connect(analyser);
+    if (app.ctx.state === 'suspended') {
+      await app.ctx.resume();
+    }
 
-      // 录制音频
+    const source = app.ctx.createBufferSource();
+    source.buffer = app.accBuffer || app.refBuffer;
+    source.connect(app.ctx.destination);
+    source.start(0);
+
+    setApp(prev => ({ ...prev, currentSource: source, startTime: app.ctx!.currentTime }));
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const micSource = app.ctx!.createMediaStreamSource(stream);
+      const analyser = app.ctx!.createAnalyser();
+      analyser.fftSize = 2048;
+      micSource.connect(analyser);
+
       const recorder = new MediaRecorder(stream);
       const chunks: Blob[] = [];
       recorder.ondataavailable = (e) => chunks.push(e.data);
-
-      // 播放参考音频
-      const refSource = app.ctx.createBufferSource();
-      refSource.buffer = app.refBuffer;
-      const refGain = app.ctx.createGain();
-      refGain.gain.value = 0.3;
-      refSource.connect(refGain);
-      refGain.connect(analyser);
-      refGain.connect(app.ctx.destination);
-      refSource.start(0);
+      recorder.start();
 
       setApp(prev => ({
         ...prev,
         isPlaying: true,
-        startTime: app.ctx!.currentTime,
         analyser,
         recorder,
         chunks,
-        currentSource: refSource,
         stats: {
           frames: 0,
           hits: 0,
@@ -277,17 +274,22 @@ export default function Home() {
         }
       }));
 
-      updateUIState();
+      setIsPreviewMode(false);
+      setRealtimeStatus('Recording...');
+      setRealtimeScore('--');
+
+      source.onended = stopSession;
       drawLoop();
     } catch (err) {
-      console.error('启动失败:', err);
-      alert('启动失败，请检查麦克风权限');
+      console.error('麦克风启动失败:', err);
+      alert('麦克风启动失败');
     }
-    showLoading(false);
   };
 
   const stopSession = () => {
     if (!app.isPlaying) return;
+
+    setApp(prev => ({ ...prev, isPlaying: false }));
 
     if (app.currentSource) app.currentSource.stop();
     if (app.recorder && app.recorder.state !== 'inactive') {
@@ -295,19 +297,14 @@ export default function Home() {
       app.recorder.onstop = () => {
         const blob = new Blob(app.chunks, { type: 'audio/webm' });
         calculateBalancedScore(blob);
-        setApp(prev => ({ ...prev, isPlaying: false }));
-        updateUIState();
         setRealtimeStatus('Finished');
       };
     }
-
-    setApp(prev => ({ ...prev, isPlaying: false }));
-    updateUIState();
   };
 
-  // ================= 4. 实时绘制 =================
-  const drawLoop = () => {
-    if (!app.isPlaying || !app.analyser) return;
+  // ================= 5. 实时绘制 =================
+  const drawLoop = (preview = false) => {
+    if (!preview && !app.isPlaying) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -317,28 +314,30 @@ export default function Home() {
 
     const w = canvas.width;
     const h = canvas.height;
-    const now = app.ctx!.currentTime - app.startTime;
+    const now = app.ctx ? (app.ctx.currentTime - app.startTime) : 0;
 
     // 清空画布
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, w, h);
 
     // 绘制波形
-    const wave = new Uint8Array(app.analyser.frequencyBinCount);
-    app.analyser.getByteTimeDomainData(wave);
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = 'rgba(10, 132, 255, 0.3)';
-    ctx.beginPath();
-    let slice = w / wave.length;
-    let x = 0;
-    for (let i = 0; i < wave.length; i += 4) {
-      let v = wave[i] / 128.0;
-      let y = v * h * 0.8;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-      x += slice * 4;
+    if (app.isPlaying && app.analyser) {
+      const wave = new Uint8Array(app.analyser.frequencyBinCount);
+      app.analyser.getByteTimeDomainData(wave);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(10, 132, 255, 0.3)';
+      ctx.beginPath();
+      const slice = w / wave.length;
+      let x = 0;
+      for (let i = 0; i < wave.length; i += 4) {
+        const v = wave[i] / 128.0;
+        const y = v * h * 0.8;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+        x += slice * 4;
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
 
     // 绘制参考音符
     const centerX = w / 3;
@@ -356,65 +355,67 @@ export default function Home() {
       }
     }
 
-    // 分析用户音高
-    const buffer = new Float32Array(2048);
-    app.analyser.getFloatTimeDomainData(buffer);
-    const rms = calculateRMS(buffer);
-    const freq = calculateFrequency(buffer, app.ctx!.sampleRate);
+    // 分析用户音高（仅非预览模式）
+    if (!preview && app.isPlaying && app.analyser) {
+      const buffer = new Float32Array(2048);
+      app.analyser.getFloatTimeDomainData(buffer);
+      const rms = getRMS(buffer);
+      const freq = autoCorrelate(buffer, app.ctx!.sampleRate);
 
-    if (rms > 0.01) {
-      setApp(prev => {
-        const newStudentVol = [...prev.stats.studentVol, rms];
-        return {
-          ...prev,
-          stats: { ...prev.stats, studentVol: newStudentVol }
-        };
-      });
-
-      if (currentNote) {
-        setApp(prev => ({
-          ...prev,
-          stats: { ...prev.stats, frames: prev.stats.frames + 1 }
-        }));
-      }
-
-      if (freq && freq > 60) {
-        let userMidi = 69 + 12 * Math.log2(freq / 440);
-        let displayMidi = userMidi;
-        let isHit = false;
+      if (rms > 0.01) {
+        setApp(prev => {
+          const newStudentVol = [...prev.stats.studentVol, rms];
+          return {
+            ...prev,
+            stats: { ...prev.stats, studentVol: newStudentVol }
+          };
+        });
 
         if (currentNote) {
-          const diff = currentNote.midi - userMidi;
-          const octOffset = 12 * Math.round(diff / 12);
-          const normDiff = Math.abs(currentNote.midi - (userMidi + octOffset));
-
           setApp(prev => ({
             ...prev,
-            stats: { ...prev.stats, diffSum: prev.stats.diffSum + normDiff }
+            stats: { ...prev.stats, frames: prev.stats.frames + 1 }
           }));
-
-          displayMidi = userMidi + octOffset;
-
-          if (normDiff < CONFIG.tolerance) {
-            isHit = true;
-            setApp(prev => ({
-              ...prev,
-              stats: { ...prev.stats, hits: prev.stats.hits + 1 }
-            }));
-            setRealtimeScore('✨');
-            if (normDiff < 1.0) displayMidi = currentNote.midi;
-          } else {
-            setRealtimeScore(diff > 0 ? '📉' : '📈');
-          }
         }
 
-        const y = getMidiY(displayMidi, h);
-        ctx.beginPath();
-        ctx.arc(centerX, y, 8, 0, Math.PI * 2);
-        ctx.fillStyle = isHit ? '#30d158' : '#ff453a';
-        ctx.fill();
-      } else {
-        setRealtimeScore('...');
+        if (freq && freq > 60) {
+          const userMidi = freqToMidi(freq);
+          let displayMidi = userMidi;
+          let isHit = false;
+
+          if (currentNote) {
+            const diff = currentNote.midi - userMidi;
+            const octOffset = 12 * Math.round(diff / 12);
+            const normDiff = Math.abs(currentNote.midi - (userMidi + octOffset));
+
+            setApp(prev => ({
+              ...prev,
+              stats: { ...prev.stats, diffSum: prev.stats.diffSum + normDiff }
+            }));
+
+            displayMidi = userMidi + octOffset;
+
+            if (normDiff < CONFIG.tolerance) {
+              isHit = true;
+              setApp(prev => ({
+                ...prev,
+                stats: { ...prev.stats, hits: prev.stats.hits + 1 }
+              }));
+              setRealtimeScore('✨');
+              if (normDiff < 1.0) displayMidi = currentNote.midi;
+            } else {
+              setRealtimeScore(diff > 0 ? '📉' : '📈');
+            }
+          }
+
+          const y = getMidiY(displayMidi, h);
+          ctx.beginPath();
+          ctx.arc(centerX, y, 8, 0, Math.PI * 2);
+          ctx.fillStyle = isHit ? '#30d158' : '#ff453a';
+          ctx.fill();
+        } else {
+          setRealtimeScore('...');
+        }
       }
     }
 
@@ -426,16 +427,14 @@ export default function Home() {
     ctx.setLineDash([5, 5]);
     ctx.stroke();
 
-    if (app.isPlaying) {
-      requestAnimationFrame(drawLoop);
+    if (preview) {
+      requestAnimationFrame(() => drawLoop(true));
+    } else if (app.isPlaying) {
+      requestAnimationFrame(() => drawLoop(false));
     }
   };
 
-  const getMidiY = (midi: number, h: number): number => {
-    return h - ((midi - 45) / (85 - 45)) * h;
-  };
-
-  // ================= 5. 评分算法 =================
+  // ================= 6. 评分算法 =================
   const calculateBalancedScore = (blob: Blob) => {
     const rawAccuracy = app.stats.frames > 0 ? app.stats.hits / app.stats.frames : 0;
     let scorePitch = 50 + Math.round(rawAccuracy * 50);
@@ -534,6 +533,7 @@ export default function Home() {
   };
 
   const resetClassroom = () => {
+    if (!confirm('确定要清空记录吗？')) return;
     setApp(prev => ({
       ...prev,
       students: [],
@@ -547,12 +547,6 @@ export default function Home() {
     }));
     setStudentCards([]);
     updateUIState();
-  };
-
-  // ================= 工具函数 =================
-  const showLoading = (show: boolean, text: string = 'Processing...') => {
-    setLoading(show);
-    setLoadingText(text);
   };
 
   const updateUIState = () => {
@@ -611,7 +605,7 @@ export default function Home() {
           <h2 className="mb-5 flex items-center justify-between text-lg">
             <span>🎹 智能声乐评测 <span style={{ fontSize: '12px', background: '#333', padding: '2px 6px', borderRadius: '4px', color: '#aaa' }}>V8.2 Full</span></span>
             <span className="text-base font-bold text-[#0a84ff]">
-              {app.refBuffer ? '准备就绪' : '等待文件'}
+              {app.refBuffer ? `当前: 第 ${app.students.length + 1} 位同学` : '等待文件'}
             </span>
           </h2>
 
@@ -620,24 +614,24 @@ export default function Home() {
               onClick={() => fileRefRef.current?.click()}
               className={`track-slot ${app.refBuffer ? 'loaded' : ''}`}
             >
-              <span className="icon-status">🗣️</span>
-              <span className="slot-label">1. 干声(必选)</span>
+              <span className="icon-status">{app.refBuffer ? '✅' : '🗣️'}</span>
+              <span className="slot-label">{app.refBuffer ? '干声已就绪' : '1. 干声(必选)'}</span>
               <span className="slot-desc">AI分析旋律</span>
             </div>
             <div
               onClick={() => fileAccRef.current?.click()}
               className={`track-slot ${app.accBuffer ? 'loaded' : ''}`}
             >
-              <span className="icon-status">🎼</span>
-              <span className="slot-label">2. 伴奏(可选)</span>
+              <span className="icon-status">{app.accBuffer ? '✅' : '🎼'}</span>
+              <span className="slot-label">{app.accBuffer ? '伴奏已就绪' : '2. 伴奏(可选)'}</span>
               <span className="slot-desc">背景播放</span>
             </div>
             <div
               onClick={() => fileScoreRef.current?.click()}
               className={`track-slot ${app.scoreImage ? 'loaded' : ''}`}
             >
-              <span className="icon-status">📄</span>
-              <span className="slot-label">3. 乐谱(可选)</span>
+              <span className="icon-status">{app.scoreImage ? '✅' : '📄'}</span>
+              <span className="slot-label">{app.scoreImage ? '乐谱已加载' : '3. 乐谱(可选)'}</span>
               <span className="slot-desc">右侧显示</span>
             </div>
           </div>
@@ -677,15 +671,15 @@ export default function Home() {
           <div className="grid grid-cols-2 gap-[15px]">
             <button
               onClick={startSession}
-              disabled={!app.refBuffer || app.isPlaying}
-              className="btn bg-gradient-to-br from-[#30d158] to-[#208a3a] text-black"
+              disabled={!app.refBuffer || app.students.length >= 4 || app.isPlaying}
+              className="btn btn-start"
             >
-              🎙️ 开始演唱
+              🎙️ 第 {app.students.length + 1} 位同学 (开始)
             </button>
             <button
               onClick={stopSession}
               disabled={!app.isPlaying}
-              className="btn bg-[#ff453a] text-white"
+              className="btn btn-stop"
             >
               ⏹ 结束评测
             </button>
