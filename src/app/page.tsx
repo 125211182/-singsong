@@ -950,12 +950,12 @@ export default function Home() {
       </div>
 
       {/* 右侧：乐谱视窗 */}
-      <div className="flex h-full w-[600px] shrink-0 flex-col bg-[#151517]">
-        <div className="border-b border-[#333] bg-[#1c1c1f] px-6 py-[15px] flex items-center justify-between">
+      <div className="flex h-full w-[800px] shrink-0 flex-col bg-[#151517]">
+        <div className="border-b border-[#333] bg-[#1c1c1f] px-8 py-[15px] flex items-center justify-between">
           <span className="font-bold text-lg">🎼 乐谱视窗</span>
           <span className="text-[12px] text-[#666]">支持滚动查看</span>
         </div>
-        <div className="flex-1 overflow-y-auto p-[20px]" style={{ backgroundImage: 'radial-gradient(#222 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
+        <div className="flex-1 overflow-y-auto p-[25px]" style={{ backgroundImage: 'radial-gradient(#222 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
           {scoreImage ? (
             <img src={scoreImage} alt="Sheet Music" className="w-full rounded-lg shadow-[0_4px_10px_rgba(0,0,0,0.5)]" />
           ) : (
