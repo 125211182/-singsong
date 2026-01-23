@@ -635,82 +635,136 @@ export default function Home() {
       cPitch += " 平均偏差很小，非常难得！";
     }
 
-    // ========== 节奏评语 ==========
+    // ========== 节奏评语（细分10个等级）==========
     const rhythmComments = {
-      perfect: [
-        "节奏感极强！每个节拍都卡得很准！",
-        "节奏把控完美！乐感十足，非常有节奏意识！",
-        "节奏精准！完全跟上了音乐骨架！"
+      sPlus: [
+        "节奏掌控大师！完美的节奏感，每个节拍都精准到位！",
+        "节奏完美无瑕！专业级别的节奏控制，令人叹服！",
+        "节奏感极佳！完全驾驭音乐，节拍零误差！"
       ],
-      excellent: [
-        "节奏很好！基本跟上了音乐，完整性高！",
-        "节奏感不错！大部分时间都能卡点！",
-        "节奏把握良好！听感连贯，很顺畅！"
+      s: [
+        "节奏非常出色！绝大部分节拍都卡得非常准！",
+        "节奏感很强！基本没有快慢，听感非常顺畅！",
+        "节奏把握优秀！完整性很高，乐感十足！"
       ],
-      good: [
-        "节奏基本准确，偶尔有快慢但不影响整体！",
-        "节奏尚可，建议多练习跟着鼓点唱！",
-        "节奏控制一般，注意听伴奏的节奏变化！"
+      aPlus: [
+        "节奏很好！大部分节拍都能准确跟上！",
+        "节奏感不错！整体连贯，偶尔有小波动！",
+        "节奏控制良好！基本跟上了音乐骨架！"
       ],
-      fair: [
-        "节奏有些不稳，但整体表现还不错！继续努力！",
-        "节奏感在进步，多听音乐多练习会更好！",
-        "偶尔抢拍或拖拍，跟着节拍器练习会有帮助！"
+      a: [
+        "节奏基本准确，大部分时间都能卡点！",
+        "节奏尚可，整体流畅，偶有快慢！",
+        "节奏把握一般，继续练习会更好！"
       ],
-      poor: [
-        "节奏需要加强，但你的态度很棒！继续加油！",
-        "节奏还在练习中，多跟着原声唱！",
-        "节奏把握需要提升，坚持练习一定能进步！"
+      bPlus: [
+        "节奏还可以，偶尔会有抢拍或拖拍！",
+        "节奏感有待提高，但整体还算顺畅！",
+        "节奏基本跟上了，注意保持稳定性！"
+      ],
+      b: [
+        "节奏有一些不稳，但整体表现还不错！",
+        "偶尔抢拍或拖拍，跟着节拍器练习会有帮助！",
+        "节奏需要加强，但态度很棒！"
+      ],
+      cPlus: [
+        "节奏感在发展中，多听音乐多练习会更好！",
+        "节奏不够稳定，建议多跟着原声唱！",
+        "节奏需要多加练习，坚持不懈会进步！"
+      ],
+      c: [
+        "节奏把握比较困难，但不要灰心！",
+        "节奏需要加强，每天坚持练习很重要！",
+        "节奏还在练习中，跟着范唱会有进步！"
+      ],
+      dPlus: [
+        "节奏需要从基础练起，跟着节拍器来！",
+        "节奏感较弱，但可以慢慢培养！",
+        "多听多唱多练习，节奏感会逐渐提高！"
+      ],
+      d: [
+        "节奏需要特别注意，建议从简单的节奏开始！",
+        "节奏把握需要更多练习，不要着急！",
+        "坚持练习，相信你一定能掌握节奏！"
       ]
     };
 
     let cRhythm = "";
-    if (r >= 95) cRhythm = rhythmComments.perfect[Math.floor(Math.random() * rhythmComments.perfect.length)];
-    else if (r >= 85) cRhythm = rhythmComments.excellent[Math.floor(Math.random() * rhythmComments.excellent.length)];
-    else if (r >= 75) cRhythm = rhythmComments.good[Math.floor(Math.random() * rhythmComments.good.length)];
-    else if (r >= 60) cRhythm = rhythmComments.fair[Math.floor(Math.random() * rhythmComments.fair.length)];
-    else cRhythm = rhythmComments.poor[Math.floor(Math.random() * rhythmComments.poor.length)];
+    if (r >= 98) cRhythm = rhythmComments.sPlus[Math.floor(Math.random() * rhythmComments.sPlus.length)];
+    else if (r >= 92) cRhythm = rhythmComments.s[Math.floor(Math.random() * rhythmComments.s.length)];
+    else if (r >= 85) cRhythm = rhythmComments.aPlus[Math.floor(Math.random() * rhythmComments.aPlus.length)];
+    else if (r >= 78) cRhythm = rhythmComments.a[Math.floor(Math.random() * rhythmComments.a.length)];
+    else if (r >= 70) cRhythm = rhythmComments.bPlus[Math.floor(Math.random() * rhythmComments.bPlus.length)];
+    else if (r >= 62) cRhythm = rhythmComments.b[Math.floor(Math.random() * rhythmComments.b.length)];
+    else if (r >= 55) cRhythm = rhythmComments.cPlus[Math.floor(Math.random() * rhythmComments.cPlus.length)];
+    else if (r >= 45) cRhythm = rhythmComments.c[Math.floor(Math.random() * rhythmComments.c.length)];
+    else if (r >= 35) cRhythm = rhythmComments.dPlus[Math.floor(Math.random() * rhythmComments.dPlus.length)];
+    else cRhythm = rhythmComments.d[Math.floor(Math.random() * rhythmComments.d.length)];
 
-    // 根据覆盖率补充评语（更加鼓励）
-    if (coverage < 0.3) {
-      cRhythm += " 可以尝试多跟着伴奏唱，完整度会提高！";
-    } else if (coverage < 0.5) {
-      cRhythm += " 继续跟上节奏，你会发现越来越容易！";
-    } else if (coverage >= 0.7) {
-      cRhythm += " 完整度很高，非常棒！";
+    // 根据覆盖率补充评语（更加细致）
+    if (coverage < 0.2) {
+      cRhythm += " 建议完整唱完，完整度是节奏评分的重要部分！";
+    } else if (coverage < 0.4) {
+      cRhythm += " 演唱完整度偏低，建议多跟着伴奏完整演唱！";
+    } else if (coverage < 0.6) {
+      cRhythm += " 完整度尚可，继续努力跟上音乐！";
+    } else if (coverage < 0.8) {
+      cRhythm += " 完整度很好，节奏感越来越强了！";
+    } else {
+      cRhythm += " 完整度极高，节奏掌控能力出色！";
     }
 
-    // ========== 情绪评语 ==========
+    // ========== 情绪评语（细分10个等级）==========
     const emotionComments = {
-      perfect: [
+      sPlus: [
+        "情感表达大师！强弱对比完美，感染力极强！",
+        "情绪掌控完美！声音富有层次，令人动容！",
+        "情感表达出色！专业级的表现，能深深打动听众！"
+      ],
+      s: [
         "情感表达极佳！强弱对比鲜明，感染力十足！",
         "情绪饱满！演唱非常有感情，能打动人心！",
         "情感表达完美！声音的强弱控制恰到好处！"
       ],
-      excellent: [
+      aPlus: [
         "情感丰富！声音有起伏，很有感染力！",
         "情绪表达很好！强弱对比明显，听感很棒！",
         "情感充沛！声音有层次，表现力强！"
       ],
-      good: [
+      a: [
         "情感表达不错！声音有一定的强弱变化！",
         "情绪尚可，再放开一点会更棒！",
-        "情感表达一般，可以尝试更投入一些！"
+        "情感表现良好，可以更投入一些！"
       ],
-      fair: [
+      bPlus: [
+        "情感表达还可以，声音有一些变化！",
+        "情绪表现一般，多听原唱会有帮助！",
+        "情感表达尚可，建议更自然地流露！"
+      ],
+      b: [
         "声音较为平淡，可以尝试增加强弱对比！",
-        "情绪可以更丰富一些，建议多听原唱！",
+        "情绪可以更丰富一些，多听原唱！",
         "声音比较平，注意情感的表达会更好！"
       ],
-      poor: [
+      cPlus: [
+        "情感表达有待提高，尝试更投入地演唱！",
+        "情绪较为平淡，建议多感受歌曲的情感！",
+        "声音需要更多情感，跟着范唱多练习！"
+      ],
+      c: [
         "大胆唱出来！自信一点会更动听！",
         "情绪可以更饱满一些，继续加油！",
         "声音需要更多情感投入，相信你会进步！"
       ],
-      quiet: [
+      dPlus: [
         "声音可以再大一些，不要害羞！",
         "放开一点声音会更好听，加油！",
         "声音需要再响亮一些，你可以的！"
+      ],
+      d: [
+        "声音太小了，大大方方地唱出来！",
+        "不要害怕，自信地演唱会更动听！",
+        "声音需要大幅提升，多加练习很重要！"
       ]
     };
 
@@ -721,14 +775,19 @@ export default function Home() {
       ? appDataRef.current.stats.studentVol.reduce((a, b) => a + b, 0) / appDataRef.current.stats.studentVol.length
       : 0;
 
-    if (volMean < 0.015 && e < 70) {
-      cEmotion = emotionComments.quiet[Math.floor(Math.random() * emotionComments.quiet.length)];
+    if (volMean < 0.015 && e < 65) {
+      cEmotion = emotionComments.dPlus[Math.floor(Math.random() * emotionComments.dPlus.length)];
     } else {
-      if (e >= 95) cEmotion = emotionComments.perfect[Math.floor(Math.random() * emotionComments.perfect.length)];
-      else if (e >= 85) cEmotion = emotionComments.excellent[Math.floor(Math.random() * emotionComments.excellent.length)];
-      else if (e >= 75) cEmotion = emotionComments.good[Math.floor(Math.random() * emotionComments.good.length)];
-      else if (e >= 60) cEmotion = emotionComments.fair[Math.floor(Math.random() * emotionComments.fair.length)];
-      else cEmotion = emotionComments.poor[Math.floor(Math.random() * emotionComments.poor.length)];
+      if (e >= 98) cEmotion = emotionComments.sPlus[Math.floor(Math.random() * emotionComments.sPlus.length)];
+      else if (e >= 92) cEmotion = emotionComments.s[Math.floor(Math.random() * emotionComments.s.length)];
+      else if (e >= 85) cEmotion = emotionComments.aPlus[Math.floor(Math.random() * emotionComments.aPlus.length)];
+      else if (e >= 78) cEmotion = emotionComments.a[Math.floor(Math.random() * emotionComments.a.length)];
+      else if (e >= 70) cEmotion = emotionComments.bPlus[Math.floor(Math.random() * emotionComments.bPlus.length)];
+      else if (e >= 62) cEmotion = emotionComments.b[Math.floor(Math.random() * emotionComments.b.length)];
+      else if (e >= 55) cEmotion = emotionComments.cPlus[Math.floor(Math.random() * emotionComments.cPlus.length)];
+      else if (e >= 45) cEmotion = emotionComments.c[Math.floor(Math.random() * emotionComments.c.length)];
+      else if (e >= 35) cEmotion = emotionComments.dPlus[Math.floor(Math.random() * emotionComments.dPlus.length)];
+      else cEmotion = emotionComments.d[Math.floor(Math.random() * emotionComments.d.length)];
     }
 
     return { pitch: cPitch, rhythm: cRhythm, emotion: cEmotion };
@@ -865,7 +924,7 @@ export default function Home() {
       <div className="flex flex-1 flex-col items-center overflow-y-auto p-5 border-r border-[#333]">
         <div className="w-full max-w-[600px] rounded-2xl bg-[#1e1e20] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.4)] border border-[#333]">
           <h2 className="mb-5 flex items-center justify-between text-lg">
-            <span>🎹 智能声乐评测 <span style={{ fontSize: '12px', background: '#333', padding: '2px 6px', borderRadius: '4px', color: '#aaa' }}>V8.9 精准版</span></span>
+            <span>🎹 智能声乐评测 <span style={{ fontSize: '12px', background: '#333', padding: '2px 6px', borderRadius: '4px', color: '#aaa' }}>V9.0 细化版</span></span>
             <span className="text-base font-bold text-[#0a84ff]">
               {refBuffer ? `当前: 第 ${students.length + 1} 位同学` : '等待文件'}
             </span>
