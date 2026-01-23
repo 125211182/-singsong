@@ -447,7 +447,7 @@ export default function Home() {
     // 最高不超过100，最低不低于50
     scorePitch = Math.min(100, Math.max(50, scorePitch));
 
-    // ========== 节奏评分（30%）==========
+    // ========== 节奏评分（30%）- 专业版 ==========
     const teacherTotal = melodyData.length;
 
     // 完成度：基于演唱时长判断（最关键的指标）
@@ -461,43 +461,92 @@ export default function Home() {
     // 覆盖率：学生演唱的帧数 / 参考音符总数（辅助指标）
     const coverage = teacherTotal > 0 ? stats.frames / teacherTotal : 0;
 
-    // 节奏评分 = 完成度(80%) + 覆盖率(20%)，满分100分
-    // 完成度是核心，覆盖率辅助，避免只唱几句也得高分
-
-    // 完成度评分（80%权重）
-    let completionScore = 0;
-    if (completion >= 0.95) completionScore = 80;      // 完整演唱
-    else if (completion >= 0.9) completionScore = 78;
-    else if (completion >= 0.85) completionScore = 75;
-    else if (completion >= 0.8) completionScore = 72;
-    else if (completion >= 0.75) completionScore = 68;
-    else if (completion >= 0.7) completionScore = 65;   // 范唱至少应该达到70%
-    else if (completion >= 0.65) completionScore = 60;
-    else if (completion >= 0.6) completionScore = 55;
-    else if (completion >= 0.55) completionScore = 50;
-    else if (completion >= 0.5) completionScore = 45;
-    else if (completion >= 0.45) completionScore = 40;
-    else if (completion >= 0.4) completionScore = 35;
-    else if (completion >= 0.35) completionScore = 30;
-    else if (completion >= 0.3) completionScore = 25;
-    else if (completion >= 0.2) completionScore = 20;
-    else completionScore = 15;
-
-    // 覆盖率评分（20%权重）
-    let coverageScore = 0;
-    if (coverage >= 0.7) coverageScore = 20;      // 覆盖率很高
-    else if (coverage >= 0.6) coverageScore = 18;
-    else if (coverage >= 0.5) coverageScore = 16;
-    else if (coverage >= 0.4) coverageScore = 14;
-    else if (coverage >= 0.3) coverageScore = 12;
-    else if (coverage >= 0.2) coverageScore = 10;
-    else coverageScore = 8;
-
-    const scoreRhythm = Math.min(100, completionScore + coverageScore);
-
-    // ========== 情绪评分（20%）==========
+    // 节奏稳定性分析：通过分析音量波动的规律性
     const studentVol = stats.studentVol;
+    let rhythmStability = 0; // 节拍稳定性评分
+    let noteAccuracy = 0;   // 时值准确性评分
+    let articulation = 0;   // 起音收音控制评分
 
+    if (studentVol.length > 10) {
+      // 分析音量变化的平滑度（用于判断节奏的连贯性）
+      let volSmoothness = 0;
+      for (let i = 1; i < studentVol.length; i++) {
+        volSmoothness += Math.abs(studentVol[i] - studentVol[i - 1]);
+      }
+      volSmoothness = volSmoothness / (studentVol.length - 1);
+
+      // 分析起音（音量突增）和收音（音量衰减）的控制
+      let attackCount = 0;  // 起音次数
+      let decayCount = 0;   // 收音次数
+      let smoothTransitions = 0; // 平滑过渡次数
+
+      for (let i = 2; i < studentVol.length - 2; i++) {
+        const prev = studentVol[i - 1];
+        const curr = studentVol[i];
+        const next = studentVol[i + 1];
+
+        // 检测起音（音量快速上升）
+        if (curr > prev * 1.5 && curr > 0.02 && next >= curr * 0.9) {
+          attackCount++;
+        }
+        // 检测收音（音量快速下降）
+        if (curr < prev * 0.6 && curr < 0.02) {
+          decayCount++;
+        }
+        // 检测平滑过渡
+        if (Math.abs(curr - prev) < 0.005 && Math.abs(next - curr) < 0.005) {
+          smoothTransitions++;
+        }
+      }
+
+      // 节拍稳定性评分（25分）
+      // 音量变化过于频繁说明节奏不稳定
+      if (volSmoothness < 0.003) rhythmStability = 25;   // 非常稳定
+      else if (volSmoothness < 0.005) rhythmStability = 23;
+      else if (volSmoothness < 0.008) rhythmStability = 21;
+      else if (volSmoothness < 0.012) rhythmStability = 19;
+      else if (volSmoothness < 0.018) rhythmStability = 17;
+      else if (volSmoothness < 0.025) rhythmStability = 15;
+      else rhythmStability = 12;                          // 波动过大
+
+      // 时值准确性评分（20分）
+      // 通过起音和收音的比例判断时值控制
+      if (attackCount > 0 && decayCount > 0) {
+        const noteRatio = Math.min(attackCount / Math.max(decayCount, 1), decayCount / Math.max(attackCount, 1));
+        if (noteRatio > 0.8) noteAccuracy = 20;          // 时值准确
+        else if (noteRatio > 0.6) noteAccuracy = 18;
+        else if (noteRatio > 0.4) noteAccuracy = 16;
+        else noteAccuracy = 14;
+      } else {
+        noteAccuracy = 15; // 起音收音不够清晰
+      }
+
+      // 起音收音控制评分（5分）
+      if (smoothTransitions > studentVol.length * 0.3) articulation = 5;
+      else if (smoothTransitions > studentVol.length * 0.2) articulation = 4;
+      else if (smoothTransitions > studentVol.length * 0.1) articulation = 3;
+      else articulation = 2;
+    }
+
+    // 完成度评分（50%权重）
+    let completionScore = 0;
+    if (completion >= 0.95) completionScore = 50;      // 完整演唱
+    else if (completion >= 0.9) completionScore = 48;
+    else if (completion >= 0.85) completionScore = 45;
+    else if (completion >= 0.8) completionScore = 42;
+    else if (completion >= 0.75) completionScore = 38;
+    else if (completion >= 0.7) completionScore = 35;   // 范唱至少应该达到35分
+    else if (completion >= 0.65) completionScore = 30;
+    else if (completion >= 0.6) completionScore = 25;
+    else if (completion >= 0.55) completionScore = 20;
+    else if (completion >= 0.5) completionScore = 15;
+    else if (completion >= 0.4) completionScore = 10;
+    else completionScore = 5;
+
+    // 节奏评分 = 完成度(50%) + 节拍稳定性(25%) + 时值准确性(20%) + 起音收音(5%)
+    const scoreRhythm = Math.min(100, completionScore + rhythmStability + noteAccuracy + articulation);
+
+    // ========== 情绪评分（20%）- 专业版 ==========
     if (studentVol.length === 0) {
       return;
     }
@@ -509,43 +558,78 @@ export default function Home() {
     const dynamicRange = volMax - volMin;
     const volStd = Math.sqrt(studentVol.reduce((a, b) => a + Math.pow(b - volMean, 2), 0) / studentVol.length);
 
-    // 基础分
-    let scoreEmotion = 60;
+    // 连贯性分析：声音是否流畅，是否有断音
+    let smoothnessScore = 0;
+    let pauseCount = 0;
+    for (let i = 1; i < studentVol.length; i++) {
+      if (studentVol[i] < 0.01 && studentVol[i - 1] >= 0.01) {
+        pauseCount++;
+      }
+    }
+    const pauseRatio = pauseCount / (studentVol.length / 50); // 每秒的停顿次数
 
-    // 音量评分（40分权重）- 降低门槛，范唱应该能得高分
+    // 气息控制分析：音量持续能力和稳定性
+    let breathControl = 0;
+    let sustainSegments = 0;
+    let currentSegment = 0;
+    for (let i = 0; i < studentVol.length; i++) {
+      if (studentVol[i] > 0.02) {
+        currentSegment++;
+        if (currentSegment > 10) { // 持续超过10帧视为有效气息
+          sustainSegments++;
+        }
+      } else {
+        currentSegment = 0;
+      }
+    }
+    const sustainRatio = sustainSegments / (studentVol.length / 20);
+
+    // 基础分
+    let scoreEmotion = 50;
+
+    // 音量评分（35分权重）
     let volScore = 0;
-    if (volMean >= 0.05) volScore = 40;           // 音量很充足
-    else if (volMean >= 0.04) volScore = 38;      // 音量充足
-    else if (volMean >= 0.03) volScore = 35;      // 音量较好
-    else if (volMean >= 0.02) volScore = 30;      // 音量适中
-    else if (volMean >= 0.015) volScore = 25;     // 音量偏小
-    else volScore = 20;                            // 音量太小
+    if (volMean >= 0.05) volScore = 35;           // 音量很充足
+    else if (volMean >= 0.04) volScore = 33;      // 音量充足
+    else if (volMean >= 0.03) volScore = 30;      // 音量较好
+    else if (volMean >= 0.02) volScore = 25;      // 音量适中
+    else if (volMean >= 0.015) volScore = 20;     // 音量偏小
+    else volScore = 15;                            // 音量太小
 
     scoreEmotion += volScore;
 
-    // 动态范围评分（30分权重）- 降低门槛，范唱应该能得高分
+    // 动态范围评分（25分权重）
     let dynamicScore = 0;
-    if (dynamicRange >= 0.05) dynamicScore = 30;   // 动态范围很大
-    else if (dynamicRange >= 0.04) dynamicScore = 28;
-    else if (dynamicRange >= 0.03) dynamicScore = 26;
-    else if (dynamicRange >= 0.02) dynamicScore = 24;
-    else if (dynamicRange >= 0.015) dynamicScore = 22;
-    else dynamicScore = 20;                        // 动态范围小
+    if (dynamicRange >= 0.06) dynamicScore = 25;   // 动态范围很大
+    else if (dynamicRange >= 0.05) dynamicScore = 23;
+    else if (dynamicRange >= 0.04) dynamicScore = 21;
+    else if (dynamicRange >= 0.03) dynamicScore = 18;
+    else if (dynamicRange >= 0.02) dynamicScore = 15;
+    else dynamicScore = 12;                        // 动态范围小
 
     scoreEmotion += dynamicScore;
 
-    // 稳定性评分（30分权重）- 降低门槛，范唱应该能得高分
-    let stabilityScore = 0;
-    if (volStd >= 0.01 && volStd < 0.05) stabilityScore = 30;   // 适度波动
-    else if (volStd >= 0.008 && volStd < 0.06) stabilityScore = 28;
-    else if (volStd >= 0.005 && volStd < 0.07) stabilityScore = 25;
-    else if (volStd >= 0.003 && volStd < 0.08) stabilityScore = 22;
-    else stabilityScore = 20;                                     // 波动异常
+    // 连贯性评分（25分权重）
+    if (pauseRatio < 0.1) smoothnessScore = 25;    // 非常连贯
+    else if (pauseRatio < 0.3) smoothnessScore = 23;
+    else if (pauseRatio < 0.5) smoothnessScore = 20;
+    else if (pauseRatio < 0.8) smoothnessScore = 17;
+    else if (pauseRatio < 1.2) smoothnessScore = 15;
+    else smoothnessScore = 12;                     // 断音过多
 
-    scoreEmotion += stabilityScore;
+    scoreEmotion += smoothnessScore;
 
-    // 最高不超过100，最低不低于60
-    scoreEmotion = Math.min(100, Math.max(60, scoreEmotion));
+    // 气息控制评分（15分权重）
+    if (sustainRatio > 0.6) breathControl = 15;    // 气息控制很好
+    else if (sustainRatio > 0.5) breathControl = 13;
+    else if (sustainRatio > 0.4) breathControl = 11;
+    else if (sustainRatio > 0.3) breathControl = 9;
+    else breathControl = 7;                         // 气息不足
+
+    scoreEmotion += breathControl;
+
+    // 最高不超过100，最低不低于50
+    scoreEmotion = Math.min(100, Math.max(50, scoreEmotion));
 
     // ========== 综合评分 ==========
     let total = Math.round(scorePitch * 0.5 + scoreRhythm * 0.3 + scoreEmotion * 0.2);
@@ -585,37 +669,67 @@ export default function Home() {
     }
     // 完成度低于50%的不给予额外保底
 
-    const comments = generateDetailedComments(scorePitch, scoreRhythm, scoreEmotion, total, avgDiff, coverage);
+    const comments = generateDetailedComments(
+      scorePitch,
+      scoreRhythm,
+      scoreEmotion,
+      total,
+      avgDiff,
+      coverage,
+      completion,
+      rhythmStability,
+      noteAccuracy,
+      articulation,
+      pauseRatio,
+      sustainRatio,
+      dynamicRange,
+      volStd
+    );
     addStudentCard(total, scorePitch, scoreRhythm, scoreEmotion, comments, blob);
   };
 
-  const generateDetailedComments = (p: number, r: number, e: number, total: number, avgDiff: number, coverage: number): ScoreComments => {
-    // ========== 音准评语 ==========
+  const generateDetailedComments = (
+    p: number,
+    r: number,
+    e: number,
+    total: number,
+    avgDiff: number,
+    coverage: number,
+    completion: number,
+    rhythmStability: number,
+    noteAccuracy: number,
+    articulation: number,
+    pauseRatio: number,
+    sustainRatio: number,
+    dynamicRange: number,
+    volStd: number
+  ): ScoreComments => {
+    // ========== 音准评语（保持现有，增加专业指导）==========
     const pitchComments = {
       perfect: [
-        "音准极其精准！每个音都落在点上，专业级别的表现！",
-        "音高控制能力超强，听感舒适，非常稳定！",
-        "音准完美！几乎没有偏差，完全达到了标准！"
+        "音准极其精准！每个音都落在标准位置，专业级听觉表现！",
+        "音高控制能力卓越，听感舒适稳定，音准偏差极小！",
+        "音准完美！几乎零误差，完全符合专业演唱标准！"
       ],
       excellent: [
-        "音准非常出色！绝大部分音都很准确，听感很棒！",
-        "音高控制很好，偶尔有小偏差但不影响整体效果！",
-        "音准优秀！核心音都很稳，表现令人满意！"
+        "音准非常出色！绝大部分音都准确到位，听觉体验极佳！",
+        "音高控制优秀，偶有小偏差但不影响整体音乐表现！",
+        "音准表现优秀！核心音符非常稳定，令人满意！"
       ],
       good: [
-        "音准不错，大部分音都在调上，继续加油！",
-        "整体音准良好，再多一点练习会更出色！",
-        "音准基本达标，注意细微的音高变化会更好！"
+        "音准表现良好！大部分音符准确，注意细节音准会更出色！",
+        "整体音准达标，多做音阶练习有助于提升精确度！",
+        "音准基本合格，注意半音和全音的细微差异会更好！"
       ],
       fair: [
-        "音准有波动，建议多听原声，找准每个音的位置！",
-        "部分音高需要调整，跟着范唱练习会有进步！",
-        "音准还在发展中，多听多唱是提升的关键！"
+        "音准有波动，建议每天练习音阶和琶音，提升听觉敏感度！",
+        "部分音高需要调整，多听多唱，培养固定音准感！",
+        "音准还在发展中，建议用钢琴辅助练习，找准每个音位！"
       ],
       poor: [
-        "音准需要加强，建议每天进行音阶练习！",
-        "音高控制还有进步空间，多听多唱是关键！",
-        "音准需要练习，坚持跟着范唱唱会越来越好！"
+        "音准需要加强，建议从基础音阶开始，每天坚持练习！",
+        "音高控制还有较大进步空间，跟着范唱慢速练习很重要！",
+        "音准需要系统训练，多听专业演唱，培养音准意识！"
       ]
     };
 
@@ -626,169 +740,156 @@ export default function Home() {
     else if (p >= 60) cPitch = pitchComments.fair[Math.floor(Math.random() * pitchComments.fair.length)];
     else cPitch = pitchComments.poor[Math.floor(Math.random() * pitchComments.poor.length)];
 
-    // 根据具体偏差补充评语
-    if (avgDiff > 2.5) {
-      cPitch += " 继续练习，相信会越来越好！";
+    // 根据具体偏差补充专业评语
+    if (avgDiff > 3) {
+      cPitch += " 平均偏差超过3个半音，需要重点练习音程听辨！";
+    } else if (avgDiff > 2.5) {
+      cPitch += " 音准偏差明显，建议用慢速演唱练习！";
     } else if (avgDiff > 1.8) {
-      cPitch += " 再细致一些会更完美。";
+      cPitch += " 音准有提升空间，注意音准预判和气息稳定！";
     } else if (avgDiff < 0.8) {
-      cPitch += " 平均偏差很小，非常难得！";
+      cPitch += " 平均偏差极小，音准控制达到专业水准！";
     }
 
-    // ========== 节奏评语（细分10个等级）==========
-    const rhythmComments = {
-      sPlus: [
-        "节奏掌控大师！完美的节奏感，每个节拍都精准到位！",
-        "节奏完美无瑕！专业级别的节奏控制，令人叹服！",
-        "节奏感极佳！完全驾驭音乐，节拍零误差！"
-      ],
-      s: [
-        "节奏非常出色！绝大部分节拍都卡得非常准！",
-        "节奏感很强！基本没有快慢，听感非常顺畅！",
-        "节奏把握优秀！完整性很高，乐感十足！"
-      ],
-      aPlus: [
-        "节奏很好！大部分节拍都能准确跟上！",
-        "节奏感不错！整体连贯，偶尔有小波动！",
-        "节奏控制良好！基本跟上了音乐骨架！"
-      ],
-      a: [
-        "节奏基本准确，大部分时间都能卡点！",
-        "节奏尚可，整体流畅，偶有快慢！",
-        "节奏把握一般，继续练习会更好！"
-      ],
-      bPlus: [
-        "节奏还可以，偶尔会有抢拍或拖拍！",
-        "节奏感有待提高，但整体还算顺畅！",
-        "节奏基本跟上了，注意保持稳定性！"
-      ],
-      b: [
-        "节奏有一些不稳，但整体表现还不错！",
-        "偶尔抢拍或拖拍，跟着节拍器练习会有帮助！",
-        "节奏需要加强，但态度很棒！"
-      ],
-      cPlus: [
-        "节奏感在发展中，多听音乐多练习会更好！",
-        "节奏不够稳定，建议多跟着原声唱！",
-        "节奏需要多加练习，坚持不懈会进步！"
-      ],
-      c: [
-        "节奏把握比较困难，但不要灰心！",
-        "节奏需要加强，每天坚持练习很重要！",
-        "节奏还在练习中，跟着范唱会有进步！"
-      ],
-      dPlus: [
-        "节奏需要从基础练起，跟着节拍器来！",
-        "节奏感较弱，但可以慢慢培养！",
-        "多听多唱多练习，节奏感会逐渐提高！"
-      ],
-      d: [
-        "节奏需要特别注意，建议从简单的节奏开始！",
-        "节奏把握需要更多练习，不要着急！",
-        "坚持练习，相信你一定能掌握节奏！"
-      ]
-    };
+    // ========== 节奏评语（专业版 - 根据具体指标给出针对性指导）==========
+    // 根据完成度、节奏稳定性、时值准确性、起音收音控制综合判断
+    let rhythmMainComment = "";
+    let rhythmTechnicalComment = "";
 
-    let cRhythm = "";
-    if (r >= 98) cRhythm = rhythmComments.sPlus[Math.floor(Math.random() * rhythmComments.sPlus.length)];
-    else if (r >= 92) cRhythm = rhythmComments.s[Math.floor(Math.random() * rhythmComments.s.length)];
-    else if (r >= 85) cRhythm = rhythmComments.aPlus[Math.floor(Math.random() * rhythmComments.aPlus.length)];
-    else if (r >= 78) cRhythm = rhythmComments.a[Math.floor(Math.random() * rhythmComments.a.length)];
-    else if (r >= 70) cRhythm = rhythmComments.bPlus[Math.floor(Math.random() * rhythmComments.bPlus.length)];
-    else if (r >= 62) cRhythm = rhythmComments.b[Math.floor(Math.random() * rhythmComments.b.length)];
-    else if (r >= 55) cRhythm = rhythmComments.cPlus[Math.floor(Math.random() * rhythmComments.cPlus.length)];
-    else if (r >= 45) cRhythm = rhythmComments.c[Math.floor(Math.random() * rhythmComments.c.length)];
-    else if (r >= 35) cRhythm = rhythmComments.dPlus[Math.floor(Math.random() * rhythmComments.dPlus.length)];
-    else cRhythm = rhythmComments.d[Math.floor(Math.random() * rhythmComments.d.length)];
-
-    // 根据覆盖率补充评语（更加细致）
-    if (coverage < 0.2) {
-      cRhythm += " 建议完整唱完，完整度是节奏评分的重要部分！";
-    } else if (coverage < 0.4) {
-      cRhythm += " 演唱完整度偏低，建议多跟着伴奏完整演唱！";
-    } else if (coverage < 0.6) {
-      cRhythm += " 完整度尚可，继续努力跟上音乐！";
-    } else if (coverage < 0.8) {
-      cRhythm += " 完整度很好，节奏感越来越强了！";
+    // 主要评语（基于总分）
+    if (r >= 95) {
+      rhythmMainComment = "节奏掌控卓越！专业级别的节奏控制，完美驾驭音乐！";
+    } else if (r >= 90) {
+      rhythmMainComment = "节奏感极佳！绝大部分节拍精准，乐感十足！";
+    } else if (r >= 85) {
+      rhythmMainComment = "节奏非常出色！整体节奏流畅，控制力很强！";
+    } else if (r >= 80) {
+      rhythmMainComment = "节奏表现优秀！基本跟上音乐骨架，偶有细微波动！";
+    } else if (r >= 75) {
+      rhythmMainComment = "节奏良好！大部分时间卡点准确，继续保持！";
+    } else if (r >= 70) {
+      rhythmMainComment = "节奏基本准确！注意保持稳定的速度感！";
+    } else if (r >= 65) {
+      rhythmMainComment = "节奏尚可，需要加强稳定性训练！";
+    } else if (r >= 60) {
+      rhythmMainComment = "节奏需要提升，建议用节拍器辅助练习！";
+    } else if (r >= 50) {
+      rhythmMainComment = "节奏感较弱，建议从基础节奏型开始练习！";
     } else {
-      cRhythm += " 完整度极高，节奏掌控能力出色！";
+      rhythmMainComment = "节奏需要重点突破，多听多练是关键！";
     }
 
-    // ========== 情绪评语（细分10个等级）==========
-    const emotionComments = {
-      sPlus: [
-        "情感表达大师！强弱对比完美，感染力极强！",
-        "情绪掌控完美！声音富有层次，令人动容！",
-        "情感表达出色！专业级的表现，能深深打动听众！"
-      ],
-      s: [
-        "情感表达极佳！强弱对比鲜明，感染力十足！",
-        "情绪饱满！演唱非常有感情，能打动人心！",
-        "情感表达完美！声音的强弱控制恰到好处！"
-      ],
-      aPlus: [
-        "情感丰富！声音有起伏，很有感染力！",
-        "情绪表达很好！强弱对比明显，听感很棒！",
-        "情感充沛！声音有层次，表现力强！"
-      ],
-      a: [
-        "情感表达不错！声音有一定的强弱变化！",
-        "情绪尚可，再放开一点会更棒！",
-        "情感表现良好，可以更投入一些！"
-      ],
-      bPlus: [
-        "情感表达还可以，声音有一些变化！",
-        "情绪表现一般，多听原唱会有帮助！",
-        "情感表达尚可，建议更自然地流露！"
-      ],
-      b: [
-        "声音较为平淡，可以尝试增加强弱对比！",
-        "情绪可以更丰富一些，多听原唱！",
-        "声音比较平，注意情感的表达会更好！"
-      ],
-      cPlus: [
-        "情感表达有待提高，尝试更投入地演唱！",
-        "情绪较为平淡，建议多感受歌曲的情感！",
-        "声音需要更多情感，跟着范唱多练习！"
-      ],
-      c: [
-        "大胆唱出来！自信一点会更动听！",
-        "情绪可以更饱满一些，继续加油！",
-        "声音需要更多情感投入，相信你会进步！"
-      ],
-      dPlus: [
-        "声音可以再大一些，不要害羞！",
-        "放开一点声音会更好听，加油！",
-        "声音需要再响亮一些，你可以的！"
-      ],
-      d: [
-        "声音太小了，大大方方地唱出来！",
-        "不要害怕，自信地演唱会更动听！",
-        "声音需要大幅提升，多加练习很重要！"
-      ]
-    };
+    // 技术性评语（基于具体指标）
+    if (completion < 0.5) {
+      rhythmTechnicalComment += " 演唱完整度偏低，建议完整唱完每首歌！";
+    } else if (completion < 0.7) {
+      rhythmTechnicalComment += " 完整度有待提高，跟上音乐的完整进程！";
+    }
 
-    let cEmotion = "";
+    if (rhythmStability < 15) {
+      rhythmTechnicalComment += " 节拍稳定性不足，节奏时快时慢，建议用节拍器练习！";
+    } else if (rhythmStability < 20) {
+      rhythmTechnicalComment += " 节拍波动较大，注意保持恒定的速度！";
+    }
 
-    // 检查音量是否太小
+    if (noteAccuracy < 16) {
+      rhythmTechnicalComment += " 音符时值控制不准，建议练习音符长短！";
+    } else if (noteAccuracy < 18) {
+      rhythmTechnicalComment += " 时值准确性有提升空间，注意音符的完整性！";
+    }
+
+    if (articulation < 4) {
+      rhythmTechnicalComment += " 起音收音不够清晰，建议练习吐字发音的连贯性！";
+    }
+
+    // 如果没有技术性问题，给予正面反馈
+    if (!rhythmTechnicalComment) {
+      if (rhythmStability >= 23 && noteAccuracy >= 18 && articulation >= 4) {
+        rhythmTechnicalComment += " 起音收音清晰，时值准确，节拍稳定，节奏基本功扎实！";
+      } else {
+        rhythmTechnicalComment += " 节奏表现全面，继续加强细节控制！";
+      }
+    }
+
+    const cRhythm = rhythmMainComment + rhythmTechnicalComment;
+
+    // ========== 情绪评语（专业版 - 根据连贯性、气息、动态等指标给出针对性指导）==========
+    // 根据连贯性、气息控制、动态范围、稳定性综合判断
+    let emotionMainComment = "";
+    let emotionTechnicalComment = "";
+
+    // 主要评语（基于总分）
+    if (e >= 95) {
+      emotionMainComment = "情感表达卓越！专业级的情绪掌控，感染力极强！";
+    } else if (e >= 90) {
+      emotionMainComment = "情感表达出色！声音富有层次，能打动听众！";
+    } else if (e >= 85) {
+      emotionMainComment = "情感丰富！声音有起伏，演唱很有感染力！";
+    } else if (e >= 80) {
+      emotionMainComment = "情绪表达良好！强弱对比明显，听感舒适！";
+    } else if (e >= 75) {
+      emotionMainComment = "情绪尚可，声音有一定的变化和层次！";
+    } else if (e >= 70) {
+      emotionMainComment = "情绪表现一般，建议更自然地流露情感！";
+    } else if (e >= 65) {
+      emotionMainComment = "情感表达有待提高，尝试更投入地演唱！";
+    } else if (e >= 60) {
+      emotionMainComment = "声音较为平淡，建议感受歌曲的情感变化！";
+    } else if (e >= 50) {
+      emotionMainComment = "声音缺乏变化，多听原唱学习情感表达！";
+    } else {
+      emotionMainComment = "声音需要大幅提升，加强情感投入和技巧训练！";
+    }
+
+    // 技术性评语（基于具体指标）
     const volMean = appDataRef.current.stats.studentVol.length > 0
       ? appDataRef.current.stats.studentVol.reduce((a, b) => a + b, 0) / appDataRef.current.stats.studentVol.length
       : 0;
 
-    if (volMean < 0.015 && e < 65) {
-      cEmotion = emotionComments.dPlus[Math.floor(Math.random() * emotionComments.dPlus.length)];
-    } else {
-      if (e >= 98) cEmotion = emotionComments.sPlus[Math.floor(Math.random() * emotionComments.sPlus.length)];
-      else if (e >= 92) cEmotion = emotionComments.s[Math.floor(Math.random() * emotionComments.s.length)];
-      else if (e >= 85) cEmotion = emotionComments.aPlus[Math.floor(Math.random() * emotionComments.aPlus.length)];
-      else if (e >= 78) cEmotion = emotionComments.a[Math.floor(Math.random() * emotionComments.a.length)];
-      else if (e >= 70) cEmotion = emotionComments.bPlus[Math.floor(Math.random() * emotionComments.bPlus.length)];
-      else if (e >= 62) cEmotion = emotionComments.b[Math.floor(Math.random() * emotionComments.b.length)];
-      else if (e >= 55) cEmotion = emotionComments.cPlus[Math.floor(Math.random() * emotionComments.cPlus.length)];
-      else if (e >= 45) cEmotion = emotionComments.c[Math.floor(Math.random() * emotionComments.c.length)];
-      else if (e >= 35) cEmotion = emotionComments.dPlus[Math.floor(Math.random() * emotionComments.dPlus.length)];
-      else cEmotion = emotionComments.d[Math.floor(Math.random() * emotionComments.d.length)];
+    if (volMean < 0.02) {
+      emotionTechnicalComment += " 整体音量偏小，建议大胆发声，提升音量！";
+    } else if (volMean < 0.03) {
+      emotionTechnicalComment += " 音量适中，可以再放开一些！";
     }
+
+    if (dynamicRange < 0.03) {
+      emotionTechnicalComment += " 动态范围偏小，声音缺乏起伏，建议练习强弱对比！";
+    } else if (dynamicRange < 0.04) {
+      emotionTechnicalComment += " 强弱对比还可以，可以更鲜明一些！";
+    }
+
+    if (pauseRatio > 1.2) {
+      emotionTechnicalComment += " 声音断续明显，连贯性不足，建议练习气息支持！";
+    } else if (pauseRatio > 0.8) {
+      emotionTechnicalComment += " 停顿较多，注意乐句的连贯演唱！";
+    } else if (pauseRatio < 0.1) {
+      emotionTechnicalComment += " 声音非常连贯，流畅度极佳！";
+    }
+
+    if (sustainRatio < 0.4) {
+      emotionTechnicalComment += " 气息控制较弱，长音支撑不足，建议练习腹式呼吸！";
+    } else if (sustainRatio < 0.5) {
+      emotionTechnicalComment += " 气息支持有待提高，加强气息训练！";
+    } else if (sustainRatio > 0.6) {
+      emotionTechnicalComment += " 气息控制优秀，长音支撑能力强！";
+    }
+
+    if (volStd > 0.08) {
+      emotionTechnicalComment += " 声音稳定性不足，波动较大，注意气息平稳！";
+    } else if (volStd > 0.06) {
+      emotionTechnicalComment += " 声音稳定性可以提升，控制好音量变化！";
+    }
+
+    // 如果没有技术性问题，给予正面反馈
+    if (!emotionTechnicalComment) {
+      if (dynamicRange >= 0.05 && pauseRatio < 0.3 && sustainRatio > 0.5) {
+        emotionTechnicalComment += " 气息控制优秀，连贯性强，动态范围丰富，情感表达完整！";
+      } else {
+        emotionTechnicalComment += " 情绪表达全面，继续完善细节！";
+      }
+    }
+
+    const cEmotion = emotionMainComment + emotionTechnicalComment;
 
     return { pitch: cPitch, rhythm: cRhythm, emotion: cEmotion };
   };
