@@ -922,7 +922,7 @@ export default function Home() {
 
       {/* 中间：主控台 */}
       <div className="flex flex-1 flex-col items-center overflow-y-auto p-5 border-r border-[#333]">
-        <div className="w-full max-w-[600px] rounded-2xl bg-[#1e1e20] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.4)] border border-[#333]">
+        <div className="w-full max-w-[800px] rounded-2xl bg-[#1e1e20] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.4)] border border-[#333]">
           <h2 className="mb-5 flex items-center justify-between text-lg">
             <span>🎹 智能声乐评测 <span style={{ fontSize: '12px', background: '#333', padding: '2px 6px', borderRadius: '4px', color: '#aaa' }}>V9.0 细化版</span></span>
             <span className="text-base font-bold text-[#0a84ff]">
