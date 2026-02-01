@@ -1170,40 +1170,40 @@ export default function Home() {
     // 生成乐句详细得分的UI
     const phraseDetails = phraseScores.length > 0 ? (
       <div className="phrase-details mt-3">
-        <div>
+        <div className="phrase-details-header">
           <span>📊 乐句得分分析</span>
-          <span className="ml-auto text-[#888] text-xs font-normal">
+          <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: 'normal' }}>
             共 {phraseScores.length} 个乐句
           </span>
         </div>
-        <div className="space-y-2">
-          {phraseScores.map((phrase, idx) => (
-            <div key={phrase.id} className="flex items-center gap-3 text-xs">
-              <span className="w-7 h-7 flex items-center justify-center flex-shrink-0">
+        <div className="phrase-details-content">
+          {phraseScores.map((phrase) => (
+            <div key={phrase.id} className="phrase-item">
+              <div className="phrase-number">
                 {phrase.id}
-              </span>
-              <div className="flex-1 min-w-0">
-                <div className="grid grid-cols-3 gap-3 mb-1">
-                  <div className="flex items-center justify-between">
+              </div>
+              <div className="phrase-info">
+                <div className="phrase-scores">
+                  <div className="phrase-score-item">
                     <span className="phrase-label">🎵 音准</span>
                     <span className={phrase.pitch >= 90 ? 'phrase-score-high' : phrase.pitch >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
                       {phrase.pitch}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between">
+                  <div className="phrase-score-item">
                     <span className="phrase-label">🥁 节奏</span>
                     <span className={phrase.rhythm >= 90 ? 'phrase-score-high' : phrase.rhythm >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
                       {phrase.rhythm}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between">
+                  <div className="phrase-score-item">
                     <span className="phrase-label">❤️ 情绪</span>
                     <span className={phrase.emotion >= 90 ? 'phrase-score-high' : phrase.emotion >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
                       {phrase.emotion}
                     </span>
                   </div>
                 </div>
-                <div className="phrase-time text-[10px]">
+                <div className="phrase-time">
                   ⏱️ {phrase.startTime.toFixed(2)}s - {phrase.endTime.toFixed(2)}s
                 </div>
               </div>
