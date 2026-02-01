@@ -1169,35 +1169,42 @@ export default function Home() {
 
     // 生成乐句详细得分的UI
     const phraseDetails = phraseScores.length > 0 ? (
-      <div className="phrase-details mt-3 p-3 bg-[#252528] rounded-lg">
-        <div className="text-sm font-bold mb-2 text-[#aaa]">📝 乐句详细得分 ({phraseScores.length}个乐句)</div>
-        <div className="space-y-2 max-h-[300px] overflow-y-auto">
+      <div className="phrase-details mt-3">
+        <div>
+          <span>📊 乐句得分分析</span>
+          <span className="ml-auto text-[#888] text-xs font-normal">
+            共 {phraseScores.length} 个乐句
+          </span>
+        </div>
+        <div className="space-y-2">
           {phraseScores.map((phrase, idx) => (
-            <div key={phrase.id} className="flex items-center gap-2 text-xs p-2 bg-[#1e1e20] rounded">
-              <span className="w-6 h-6 flex items-center justify-center bg-[#333] rounded text-[#888]">{phrase.id}</span>
-              <div className="flex-1">
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <span className="text-[#888]">音准:</span>
-                    <span className={`ml-1 ${phrase.pitch >= 90 ? 'text-[#30d158]' : phrase.pitch >= 80 ? 'text-[#0a84ff]' : 'text-[#ff453a]'}`}>
+            <div key={phrase.id} className="flex items-center gap-3 text-xs">
+              <span className="w-7 h-7 flex items-center justify-center flex-shrink-0">
+                {phrase.id}
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="grid grid-cols-3 gap-3 mb-1">
+                  <div className="flex items-center justify-between">
+                    <span className="phrase-label">🎵 音准</span>
+                    <span className={phrase.pitch >= 90 ? 'phrase-score-high' : phrase.pitch >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
                       {phrase.pitch}
                     </span>
                   </div>
-                  <div>
-                    <span className="text-[#888]">节奏:</span>
-                    <span className={`ml-1 ${phrase.rhythm >= 90 ? 'text-[#30d158]' : phrase.rhythm >= 80 ? 'text-[#0a84ff]' : 'text-[#ff453a]'}`}>
+                  <div className="flex items-center justify-between">
+                    <span className="phrase-label">🥁 节奏</span>
+                    <span className={phrase.rhythm >= 90 ? 'phrase-score-high' : phrase.rhythm >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
                       {phrase.rhythm}
                     </span>
                   </div>
-                  <div>
-                    <span className="text-[#888]">情绪:</span>
-                    <span className={`ml-1 ${phrase.emotion >= 90 ? 'text-[#30d158]' : phrase.emotion >= 80 ? 'text-[#0a84ff]' : 'text-[#ff453a]'}`}>
+                  <div className="flex items-center justify-between">
+                    <span className="phrase-label">❤️ 情绪</span>
+                    <span className={phrase.emotion >= 90 ? 'phrase-score-high' : phrase.emotion >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
                       {phrase.emotion}
                     </span>
                   </div>
                 </div>
-                <div className="text-[#555] mt-1">
-                  {phrase.startTime.toFixed(1)}s - {phrase.endTime.toFixed(1)}s
+                <div className="phrase-time text-[10px]">
+                  ⏱️ {phrase.startTime.toFixed(2)}s - {phrase.endTime.toFixed(2)}s
                 </div>
               </div>
             </div>
