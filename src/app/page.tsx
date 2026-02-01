@@ -1187,19 +1187,19 @@ export default function Home() {
                   <div className="phrase-score-item">
                     <span className="phrase-label">🎵 音准</span>
                     <span className={phrase.pitch >= 90 ? 'phrase-score-high' : phrase.pitch >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
-                      {phrase.pitch}
+                      {Math.round(phrase.pitch)}
                     </span>
                   </div>
                   <div className="phrase-score-item">
                     <span className="phrase-label">🥁 节奏</span>
                     <span className={phrase.rhythm >= 90 ? 'phrase-score-high' : phrase.rhythm >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
-                      {phrase.rhythm}
+                      {Math.round(phrase.rhythm)}
                     </span>
                   </div>
                   <div className="phrase-score-item">
                     <span className="phrase-label">❤️ 情绪</span>
                     <span className={phrase.emotion >= 90 ? 'phrase-score-high' : phrase.emotion >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
-                      {phrase.emotion}
+                      {Math.round(phrase.emotion)}
                     </span>
                   </div>
                 </div>
@@ -1281,7 +1281,7 @@ export default function Home() {
   const students = appDataRef.current.students;
 
   return (
-    <div className="flex min-h-screen bg-[#121214] text-[#e0e0e0]">
+    <div className="flex h-screen overflow-hidden bg-[#121214] text-[#e0e0e0]">
       {/* Loading Overlay */}
       {loading && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/85 backdrop-blur-sm">
