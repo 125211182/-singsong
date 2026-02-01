@@ -27,6 +27,25 @@ interface ScoreComments {
   emotion: string;
 }
 
+// 乐句级别的得分
+interface PhraseScore {
+  id: number;
+  startTime: number;
+  endTime: number;
+  pitch: number;
+  rhythm: number;
+  emotion: number;
+}
+
+// 采样点数据（用于乐句分析）
+interface SampleData {
+  time: number;
+  volume: number;
+  hasPitch: boolean;
+  isHit: boolean;
+  pitchDiff?: number;
+}
+
 interface AppData {
   ctx: AudioContext | null;
   analyser: AnalyserNode | null;
@@ -41,6 +60,8 @@ interface AppData {
     diffSum: number;
     teacherEnergy: number[];
     studentVol: number[];
+    // 新增：采样点数据（用于乐句分析）
+    sampleData: SampleData[];
   };
   currentSource: AudioBufferSourceNode | null;
   recorder: MediaRecorder | null;
@@ -67,7 +88,8 @@ export default function Home() {
       hits: 0,
       diffSum: 0,
       teacherEnergy: [],
-      studentVol: []
+      studentVol: [],
+      sampleData: []
     },
     currentSource: null,
     recorder: null,
@@ -258,7 +280,8 @@ export default function Home() {
         hits: 0,
         diffSum: 0,
         teacherEnergy: [],
-        studentVol: []
+        studentVol: [],
+        sampleData: []
       };
 
       setRealtimeStatus('Recording...');
@@ -374,6 +397,7 @@ export default function Home() {
           const userMidi = freqToMidi(freq);
           let displayMidi = userMidi;
           let isHit = false;
+          let pitchDiff = 0;
 
           if (currentNote) {
             const diff = currentNote.midi - userMidi;
@@ -381,6 +405,7 @@ export default function Home() {
             const normDiff = Math.abs(currentNote.midi - (userMidi + octOffset));
 
             data.stats.diffSum = data.stats.diffSum + normDiff;
+            pitchDiff = normDiff;
 
             displayMidi = userMidi + octOffset;
 
@@ -399,9 +424,33 @@ export default function Home() {
           ctx.arc(centerX, y, 8, 0, Math.PI * 2);
           ctx.fillStyle = isHit ? '#30d158' : '#ff453a';
           ctx.fill();
+
+          // 记录采样点数据（用于乐句分析）
+          data.stats.sampleData.push({
+            time: now,
+            volume: rms,
+            hasPitch: true,
+            isHit: isHit,
+            pitchDiff: pitchDiff
+          });
         } else {
           setRealtimeScore('...');
+          // 记录采样点数据（有声音但无音高）
+          data.stats.sampleData.push({
+            time: now,
+            volume: rms,
+            hasPitch: false,
+            isHit: false
+          });
         }
+      } else {
+        // 记录采样点数据（无声音）
+        data.stats.sampleData.push({
+          time: now,
+          volume: rms,
+          hasPitch: false,
+          isHit: false
+        });
       }
     }
 
@@ -669,6 +718,202 @@ export default function Home() {
     }
     // 完成度低于50%的不给予额外保底
 
+    // ========== 乐句识别和乐句级评分 ==========
+    const sampleData = stats.sampleData;
+    const phraseScores: PhraseScore[] = [];
+
+    if (sampleData.length > 50) {
+      // 检测乐句边界（基于音量停顿点）
+      const phrases: { startTime: number; endTime: number; samples: SampleData[] }[] = [];
+      let currentPhrase: SampleData[] = [];
+      let inPhrase = false;
+      let silenceFrames = 0;
+
+      // 参数配置
+      const SILENCE_THRESHOLD = 0.01;  // 静音阈值
+      const MIN_SILENCE_FRAMES = 10;   // 最小静音帧数（约0.46秒）
+      const MIN_PHRASE_SAMPLES = 15;   // 最小乐句样本数（约0.7秒）
+      const MAX_PHRASE_GAP = 200;      // 最大乐句间隔（样本数）
+
+      for (let i = 0; i < sampleData.length; i++) {
+        const sample = sampleData[i];
+
+        if (sample.volume > SILENCE_THRESHOLD) {
+          // 有声音
+          if (!inPhrase) {
+            // 新的乐句开始
+            if (currentPhrase.length >= MIN_PHRASE_SAMPLES) {
+              phrases.push({
+                startTime: currentPhrase[0].time,
+                endTime: currentPhrase[currentPhrase.length - 1].time,
+                samples: [...currentPhrase]
+              });
+            }
+            currentPhrase = [];
+          }
+          currentPhrase.push(sample);
+          inPhrase = true;
+          silenceFrames = 0;
+        } else {
+          // 无声音
+          silenceFrames++;
+          if (silenceFrames > MIN_SILENCE_FRAMES) {
+            // 静音时间足够长，乐句结束
+            if (currentPhrase.length >= MIN_PHRASE_SAMPLES) {
+              phrases.push({
+                startTime: currentPhrase[0].time,
+                endTime: currentPhrase[currentPhrase.length - 1].time,
+                samples: [...currentPhrase]
+              });
+            }
+            currentPhrase = [];
+            inPhrase = false;
+          }
+        }
+      }
+
+      // 处理最后一个乐句
+      if (currentPhrase.length >= MIN_PHRASE_SAMPLES) {
+        phrases.push({
+          startTime: currentPhrase[0].time,
+          endTime: currentPhrase[currentPhrase.length - 1].time,
+          samples: [...currentPhrase]
+        });
+      }
+
+      // 合并相邻的乐句（如果间隔太小）
+      const mergedPhrases: typeof phrases = [];
+      for (const phrase of phrases) {
+        if (mergedPhrases.length === 0) {
+          mergedPhrases.push(phrase);
+        } else {
+          const lastPhrase = mergedPhrases[mergedPhrases.length - 1];
+          const gapInSamples = (phrase.startTime - lastPhrase.endTime) / (2048 / 44100) / (2048 / 44100);
+          if (gapInSamples < MAX_PHRASE_GAP) {
+            // 合并乐句
+            lastPhrase.endTime = phrase.endTime;
+            lastPhrase.samples.push(...phrase.samples);
+          } else {
+            mergedPhrases.push(phrase);
+          }
+        }
+      }
+
+      // 为每个乐句计算得分
+      const sampleInterval = 2048 / 44100;
+
+      for (let i = 0; i < mergedPhrases.length; i++) {
+        const phrase = mergedPhrases[i];
+        const phraseSamples = phrase.samples;
+
+        // 音准评分
+        const pitchSamples = phraseSamples.filter(s => s.hasPitch);
+        const pitchFrames = pitchSamples.length;
+        const pitchHits = pitchSamples.filter(s => s.isHit).length;
+        const pitchAvgDiff = pitchSamples.length > 0
+          ? pitchSamples.reduce((sum, s) => sum + (s.pitchDiff || 0), 0) / pitchSamples.length
+          : 0;
+
+        let phrasePitchScore = 50;
+        if (pitchFrames > 0) {
+          const accuracy = pitchHits / pitchFrames;
+          let accuracyScore = accuracy * 60;
+          let precisionScore = 0;
+          if (pitchAvgDiff <= 0.8) precisionScore = 40;
+          else if (pitchAvgDiff <= 1.2) precisionScore = 35;
+          else if (pitchAvgDiff <= 1.8) precisionScore = 30;
+          else if (pitchAvgDiff <= 2.5) precisionScore = 25;
+          else if (pitchAvgDiff <= 3.5) precisionScore = 20;
+          else precisionScore = 15;
+          phrasePitchScore = Math.min(100, Math.max(50, accuracyScore + precisionScore));
+        }
+
+        // 节奏评分
+        const phraseDuration = phraseSamples.length * sampleInterval;
+        const totalDuration = sampleData.length * sampleInterval;
+        const phraseCompletion = totalDuration > 0 ? phraseDuration / totalDuration : 0;
+
+        let phraseRhythmScore = 50;
+        if (phraseSamples.length > 10) {
+          const volSmoothness = phraseSamples.reduce((sum, s, idx) => {
+            if (idx === 0) return 0;
+            return sum + Math.abs(s.volume - phraseSamples[idx - 1].volume);
+          }, 0) / (phraseSamples.length - 1);
+
+          let rhythmStabilityScore = 0;
+          if (volSmoothness < 0.003) rhythmStabilityScore = 25;
+          else if (volSmoothness < 0.005) rhythmStabilityScore = 23;
+          else if (volSmoothness < 0.008) rhythmStabilityScore = 21;
+          else if (volSmoothness < 0.012) rhythmStabilityScore = 19;
+          else if (volSmoothness < 0.018) rhythmStabilityScore = 17;
+          else rhythmStabilityScore = 12;
+
+          const phraseVol = phraseSamples.map(s => s.volume);
+          const phraseVolMean = phraseVol.reduce((a, b) => a + b, 0) / phraseVol.length;
+          const phraseDynamicRange = Math.max(...phraseVol) - Math.min(...phraseVol);
+
+          let dynamicScore = 0;
+          if (phraseDynamicRange >= 0.05) dynamicScore = 15;
+          else if (phraseDynamicRange >= 0.04) dynamicScore = 13;
+          else if (phraseDynamicRange >= 0.03) dynamicScore = 11;
+          else dynamicScore = 8;
+
+          phraseRhythmScore = Math.min(100, rhythmStabilityScore + dynamicScore + 10);
+        }
+
+        // 情绪评分
+        let phraseEmotionScore = 50;
+        if (phraseSamples.length > 10) {
+          const phraseVol = phraseSamples.map(s => s.volume);
+          const phraseVolMean = phraseVol.reduce((a, b) => a + b, 0) / phraseVol.length;
+          const phraseVolMax = Math.max(...phraseVol);
+          const phraseVolMin = Math.min(...phraseVol);
+          const phraseDynamicRange = phraseVolMax - phraseVolMin;
+
+          let volScore = 0;
+          if (phraseVolMean >= 0.05) volScore = 35;
+          else if (phraseVolMean >= 0.04) volScore = 33;
+          else if (phraseVolMean >= 0.03) volScore = 30;
+          else if (phraseVolMean >= 0.02) volScore = 25;
+          else if (phraseVolMean >= 0.015) volScore = 20;
+          else volScore = 15;
+
+          let dynamicScore = 0;
+          if (phraseDynamicRange >= 0.06) dynamicScore = 25;
+          else if (phraseDynamicRange >= 0.05) dynamicScore = 23;
+          else if (phraseDynamicRange >= 0.04) dynamicScore = 21;
+          else if (phraseDynamicRange >= 0.03) dynamicScore = 18;
+          else dynamicScore = 12;
+
+          let pauseCount = 0;
+          for (let j = 1; j < phraseSamples.length; j++) {
+            if (phraseSamples[j].volume < 0.01 && phraseSamples[j - 1].volume >= 0.01) {
+              pauseCount++;
+            }
+          }
+          const pauseRatio = pauseCount / (phraseSamples.length / 50);
+
+          let smoothnessScore = 0;
+          if (pauseRatio < 0.1) smoothnessScore = 25;
+          else if (pauseRatio < 0.3) smoothnessScore = 23;
+          else if (pauseRatio < 0.5) smoothnessScore = 20;
+          else if (pauseRatio < 0.8) smoothnessScore = 17;
+          else smoothnessScore = 12;
+
+          phraseEmotionScore = Math.min(100, volScore + dynamicScore + smoothnessScore);
+        }
+
+        phraseScores.push({
+          id: i + 1,
+          startTime: phrase.startTime,
+          endTime: phrase.endTime,
+          pitch: phrasePitchScore,
+          rhythm: phraseRhythmScore,
+          emotion: phraseEmotionScore
+        });
+      }
+    }
+
     const comments = generateDetailedComments(
       scorePitch,
       scoreRhythm,
@@ -683,9 +928,10 @@ export default function Home() {
       pauseRatio,
       sustainRatio,
       dynamicRange,
-      volStd
+      volStd,
+      phraseScores
     );
-    addStudentCard(total, scorePitch, scoreRhythm, scoreEmotion, comments, blob);
+    addStudentCard(total, scorePitch, scoreRhythm, scoreEmotion, comments, blob, phraseScores);
   };
 
   const generateDetailedComments = (
@@ -702,7 +948,8 @@ export default function Home() {
     pauseRatio: number,
     sustainRatio: number,
     dynamicRange: number,
-    volStd: number
+    volStd: number,
+    phraseScores: PhraseScore[]
   ): ScoreComments => {
     // ========== 音准评语（保持现有，增加专业指导）==========
     const pitchComments = {
@@ -900,7 +1147,8 @@ export default function Home() {
     r: number,
     e: number,
     comments: ScoreComments,
-    blob: Blob
+    blob: Blob,
+    phraseScores: PhraseScore[] = []
   ) => {
     const data = appDataRef.current;
     const name = `同学 ${String.fromCharCode(65 + data.students.length)}`;
@@ -918,6 +1166,45 @@ export default function Home() {
     else if (total >= 60) { rank = 'C'; color = '#ff453a'; }
     else if (total >= 55) { rank = 'C-'; color = '#ff453a'; }
     else { rank = 'D'; color = '#ff6b6b'; }
+
+    // 生成乐句详细得分的UI
+    const phraseDetails = phraseScores.length > 0 ? (
+      <div className="phrase-details mt-3 p-3 bg-[#252528] rounded-lg">
+        <div className="text-sm font-bold mb-2 text-[#aaa]">📝 乐句详细得分 ({phraseScores.length}个乐句)</div>
+        <div className="space-y-2 max-h-[300px] overflow-y-auto">
+          {phraseScores.map((phrase, idx) => (
+            <div key={phrase.id} className="flex items-center gap-2 text-xs p-2 bg-[#1e1e20] rounded">
+              <span className="w-6 h-6 flex items-center justify-center bg-[#333] rounded text-[#888]">{phrase.id}</span>
+              <div className="flex-1">
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <span className="text-[#888]">音准:</span>
+                    <span className={`ml-1 ${phrase.pitch >= 90 ? 'text-[#30d158]' : phrase.pitch >= 80 ? 'text-[#0a84ff]' : 'text-[#ff453a]'}`}>
+                      {phrase.pitch}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[#888]">节奏:</span>
+                    <span className={`ml-1 ${phrase.rhythm >= 90 ? 'text-[#30d158]' : phrase.rhythm >= 80 ? 'text-[#0a84ff]' : 'text-[#ff453a]'}`}>
+                      {phrase.rhythm}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[#888]">情绪:</span>
+                    <span className={`ml-1 ${phrase.emotion >= 90 ? 'text-[#30d158]' : phrase.emotion >= 80 ? 'text-[#0a84ff]' : 'text-[#ff453a]'}`}>
+                      {phrase.emotion}
+                    </span>
+                  </div>
+                </div>
+                <div className="text-[#555] mt-1">
+                  {phrase.startTime.toFixed(1)}s - {phrase.endTime.toFixed(1)}s
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ) : null;
 
     const card = (
       <div key={data.students.length} className="student-card" style={{ borderLeftColor: color }}>
@@ -947,6 +1234,7 @@ export default function Home() {
           <div className="comment-item"><span className="c-label">🥁 节奏:</span><span>{comments.rhythm}</span></div>
           <div className="comment-item"><span className="c-label">❤️ 情绪:</span><span>{comments.emotion}</span></div>
         </div>
+        {phraseDetails}
         <audio controls src={URL.createObjectURL(blob)} />
       </div>
     );
@@ -965,7 +1253,8 @@ export default function Home() {
       hits: 0,
       diffSum: 0,
       teacherEnergy: [],
-      studentVol: []
+      studentVol: [],
+      sampleData: []
     };
     setStudentCards([]);
     setUpdateCounter(prev => prev + 1);
