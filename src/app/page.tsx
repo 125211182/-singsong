@@ -37,6 +37,20 @@ interface PhraseScore {
   emotion: number;
 }
 
+// 学生完整评分数据（用于分享和恢复）
+interface StudentScoreData {
+  name: string;
+  total: number;
+  pitch: number;
+  rhythm: number;
+  emotion: number;
+  rank: string;
+  rankColor: string;
+  comments: ScoreComments;
+  phraseScores: PhraseScore[];
+  audioUrl?: string; // 录音文件URL（分享后才有）
+}
+
 // 采样点数据（用于乐句分析）
 interface SampleData {
   time: number;
@@ -103,6 +117,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [loadingText, setLoadingText] = useState('Processing...');
   const [studentCards, setStudentCards] = useState<React.ReactElement[]>([]);
+  const [studentScoreData, setStudentScoreData] = useState<StudentScoreData[]>([]); // 存储评分数据用于分享
   const [scoreImage, setScoreImage] = useState<string | null>(null);
   const [updateCounter, setUpdateCounter] = useState(0); // 用于触发 UI 更新
   const [shareLoading, setShareLoading] = useState(false);
@@ -1246,6 +1261,21 @@ export default function Home() {
     );
 
     setStudentCards(prev => [card, ...prev]);
+    
+    // 保存评分数据用于分享
+    const scoreData: StudentScoreData = {
+      name,
+      total,
+      pitch: p,
+      rhythm: r,
+      emotion: e,
+      rank,
+      rankColor: color,
+      comments,
+      phraseScores
+    };
+    setStudentScoreData(prev => [scoreData, ...prev]);
+    
     data.students.push({ name });
     setUpdateCounter(prev => prev + 1);
   };
@@ -1263,6 +1293,7 @@ export default function Home() {
       sampleData: []
     };
     setStudentCards([]);
+    setStudentScoreData([]);
     setUpdateCounter(prev => prev + 1);
   };
 
@@ -1440,6 +1471,7 @@ export default function Home() {
         
         // 加载干声
         if (voiceUrl) {
+          setLoadingText('正在加载干声...');
           const audioResponse = await fetch(voiceUrl);
           const audioBlob = await audioResponse.blob();
           const audioFile = new File([audioBlob], 'ref_audio.wav', { type: 'audio/wav' });
@@ -1448,6 +1480,7 @@ export default function Home() {
         
         // 加载伴奏
         if (accompanimentUrl) {
+          setLoadingText('正在加载伴奏...');
           const audioResponse = await fetch(accompanimentUrl);
           const audioBlob = await audioResponse.blob();
           const audioFile = new File([audioBlob], 'acc_audio.wav', { type: 'audio/wav' });
@@ -1459,10 +1492,100 @@ export default function Home() {
           setScoreImage(scoreImageUrl);
         }
         
-        // 恢复学生评分数据（简化处理，显示提示）
+        // 恢复学生评分数据
         if (scores && scores.length > 0) {
-          // 由于评分数据比较复杂，这里只显示提示
-          console.log('已加载分享数据，包含', scores.length, '条评分记录');
+          setLoadingText('正在恢复评分记录...');
+          
+          // 保存评分数据
+          setStudentScoreData(scores);
+          
+          // 重新生成学生卡片
+          const newCards: React.ReactElement[] = [];
+          const data = appDataRef.current;
+          
+          for (const score of scores) {
+            // 生成歌曲得分明细UI
+            const phraseDetails = score.phraseScores && score.phraseScores.length > 0 ? (
+              <div className="phrase-details mt-3">
+                <div className="phrase-details-header">
+                  <span>📊 歌曲得分明细</span>
+                  <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: 'normal' }}>
+                    共 {score.phraseScores.length} 个片段
+                  </span>
+                </div>
+                <div className="phrase-details-content">
+                  {score.phraseScores.map((phrase: PhraseScore) => (
+                    <div key={phrase.id} className="phrase-item">
+                      <div className="phrase-time-badge">
+                        {phrase.startTime.toFixed(1)}s-{phrase.endTime.toFixed(1)}s
+                      </div>
+                      <div className="phrase-info">
+                        <div className="phrase-scores">
+                          <div className="phrase-score-item">
+                            <span className="phrase-label">🎵 音准</span>
+                            <span className={phrase.pitch >= 90 ? 'phrase-score-high' : phrase.pitch >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
+                              {Math.round(phrase.pitch)}
+                            </span>
+                          </div>
+                          <div className="phrase-score-item">
+                            <span className="phrase-label">🥁 节奏</span>
+                            <span className={phrase.rhythm >= 90 ? 'phrase-score-high' : phrase.rhythm >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
+                              {Math.round(phrase.rhythm)}
+                            </span>
+                          </div>
+                          <div className="phrase-score-item">
+                            <span className="phrase-label">❤️ 情绪</span>
+                            <span className={phrase.emotion >= 90 ? 'phrase-score-high' : phrase.emotion >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
+                              {Math.round(phrase.emotion)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null;
+            
+            const card = (
+              <div key={newCards.length} className="student-card" style={{ borderLeftColor: score.rankColor }}>
+                <div className="card-top">
+                  <div className="stu-name">{score.name} <span className="rank-badge" style={{ background: score.rankColor }}>{score.rank}</span></div>
+                  <div className="stu-total" style={{ color: score.rankColor }}>{score.total}</div>
+                </div>
+                <div className="dim-bars">
+                  <div className="dim-row">
+                    <span className="dim-label">音准</span>
+                    <div className="dim-track"><div className="dim-fill" style={{ width: `${score.pitch}%`, background: '#30d158' }}></div></div>
+                    <span className="dim-score">{score.pitch}</span>
+                  </div>
+                  <div className="dim-row">
+                    <span className="dim-label">节奏</span>
+                    <div className="dim-track"><div className="dim-fill" style={{ width: `${score.rhythm}%`, background: '#0a84ff' }}></div></div>
+                    <span className="dim-score">{score.rhythm}</span>
+                  </div>
+                  <div className="dim-row">
+                    <span className="dim-label">情绪</span>
+                    <div className="dim-track"><div className="dim-fill" style={{ width: `${score.emotion}%`, background: '#ffd60a' }}></div></div>
+                    <span className="dim-score">{score.emotion}</span>
+                  </div>
+                </div>
+                <div className="pro-comment">
+                  <div className="comment-item"><span className="c-label">🎵 音准:</span><span>{score.comments.pitch}</span></div>
+                  <div className="comment-item"><span className="c-label">🥁 节奏:</span><span>{score.comments.rhythm}</span></div>
+                  <div className="comment-item"><span className="c-label">❤️ 情绪:</span><span>{score.comments.emotion}</span></div>
+                </div>
+                {phraseDetails}
+                {score.audioUrl && <audio controls src={score.audioUrl} />}
+              </div>
+            );
+            
+            newCards.push(card);
+            data.students.push({ name: score.name });
+          }
+          
+          setStudentCards(newCards);
+          setUpdateCounter(prev => prev + 1);
         }
       }
     } catch (error) {
@@ -1475,10 +1598,12 @@ export default function Home() {
 
   // 分享课堂数据
   const handleShare = async () => {
-    const students = appDataRef.current.students;
+    const data = appDataRef.current;
+    const hasVoice = data.refBuffer !== null;
+    const hasStudents = studentScoreData.length > 0;
     
-    if (students.length === 0) {
-      alert('暂无数据可分享，请先进行演唱评测');
+    if (!hasVoice && !hasStudents) {
+      alert('请先上传干声或进行演唱评测');
       return;
     }
     
@@ -1584,16 +1709,8 @@ export default function Home() {
       
       setLoadingText('正在生成分享链接...');
       
-      // 5. 收集评分数据
-      const scores = studentCards.map((card, index) => ({
-        name: students[index]?.name || `同学${index + 1}`,
-        // 从卡片中提取分数（这里简化处理）
-        scores: {
-          pitch: 85 + Math.random() * 10,
-          rhythm: 80 + Math.random() * 15,
-          emotion: 85 + Math.random() * 10
-        }
-      }));
+      // 5. 保存真实的评分数据
+      const scores = studentScoreData;
       
       // 6. 创建分享链接
       const shareResponse = await fetch('/api/share', {
