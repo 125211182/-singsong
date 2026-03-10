@@ -60,13 +60,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 返回分享链接
-    const shareUrl = `${process.env.NEXT_PUBLIC_BASE_URL || ''}/?share=${shareId}`;
-
+    // 返回分享ID，前端自行拼接完整URL
     return NextResponse.json({
       success: true,
-      shareId,
-      shareUrl
+      shareId
     });
 
   } catch (error) {

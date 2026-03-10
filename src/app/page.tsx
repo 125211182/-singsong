@@ -1613,13 +1613,15 @@ export default function Home() {
       const shareResult = await shareResponse.json();
       
       if (shareResult.success) {
-        setShareUrl(shareResult.shareUrl);
+        // 使用当前域名拼接完整URL
+        const fullShareUrl = `${window.location.origin}/?share=${shareResult.shareId}`;
+        setShareUrl(fullShareUrl);
         // 复制到剪贴板
         try {
-          await navigator.clipboard.writeText(shareResult.shareUrl);
+          await navigator.clipboard.writeText(fullShareUrl);
           alert('分享链接已复制到剪贴板！');
         } catch {
-          alert(`分享链接：${shareResult.shareUrl}`);
+          alert(`分享链接：${fullShareUrl}`);
         }
       } else {
         alert('创建分享链接失败');
