@@ -70,8 +70,9 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Upload API error:', error);
+    const errorMessage = error instanceof Error ? error.message : '上传失败';
     return NextResponse.json(
-      { error: '上传失败' },
+      { error: errorMessage, success: false },
       { status: 500 }
     );
   }

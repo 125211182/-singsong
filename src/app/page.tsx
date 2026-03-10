@@ -125,6 +125,25 @@ export default function Home() {
   const [shareUrl, setShareUrl] = useState<string | null>(null);
 
   // ================= 1. 工具函数 =================
+  // 安全解析JSON响应
+  const safeParseJSON = async (response: Response): Promise<{ success: boolean; data?: any; error?: string }> => {
+    try {
+      const text = await response.text();
+      if (!text) {
+        return { success: false, error: '服务器返回空响应' };
+      }
+      try {
+        const json = JSON.parse(text);
+        return { success: true, data: json };
+      } catch {
+        console.error('JSON parse error, response text:', text.substring(0, 200));
+        return { success: false, error: `服务器返回非JSON响应: ${text.substring(0, 100)}` };
+      }
+    } catch (error) {
+      return { success: false, error: '读取响应失败' };
+    }
+  };
+
   const getRMS = (buf: Float32Array): number => {
     let sum = 0;
     for (let i = 0; i < buf.length; i++) {
@@ -1633,9 +1652,11 @@ export default function Home() {
           body: formData
         });
         
-        const uploadResult = await uploadResponse.json();
-        if (uploadResult.success) {
-          voiceUrl = uploadResult.url;
+        const parseResult = await safeParseJSON(uploadResponse);
+        if (parseResult.success && parseResult.data?.success) {
+          voiceUrl = parseResult.data.url;
+        } else {
+          console.error('Upload voice from refBuffer failed:', parseResult.error);
         }
       } else {
         // 尝试从录制数据获取
@@ -1654,9 +1675,9 @@ export default function Home() {
             body: formData
           });
           
-          const uploadResult = await uploadResponse.json();
-          if (uploadResult.success) {
-            voiceUrl = uploadResult.url;
+          const parseResult = await safeParseJSON(uploadResponse);
+          if (parseResult.success && parseResult.data?.success) {
+            voiceUrl = parseResult.data.url;
           }
         }
         
@@ -1674,9 +1695,9 @@ export default function Home() {
               body: formData
             });
             
-            const uploadResult = await uploadResponse.json();
-            if (uploadResult.success) {
-              voiceUrl = uploadResult.url;
+            const parseResult = await safeParseJSON(uploadResponse);
+            if (parseResult.success && parseResult.data?.success) {
+              voiceUrl = parseResult.data.url;
             }
           }
         }
@@ -1709,9 +1730,11 @@ export default function Home() {
           body: formData
         });
         
-        const uploadResult = await uploadResponse.json();
-        if (uploadResult.success) {
-          accompanimentUrl = uploadResult.url;
+        const parseResult = await safeParseJSON(uploadResponse);
+        if (parseResult.success && parseResult.data?.success) {
+          accompanimentUrl = parseResult.data.url;
+        } else {
+          console.error('Upload accompaniment failed:', parseResult.error);
         }
       } else {
         // 尝试从文件input获取
@@ -1726,9 +1749,9 @@ export default function Home() {
             body: formData
           });
           
-          const uploadResult = await uploadResponse.json();
-          if (uploadResult.success) {
-            accompanimentUrl = uploadResult.url;
+          const parseResult = await safeParseJSON(uploadResponse);
+          if (parseResult.success && parseResult.data?.success) {
+            accompanimentUrl = parseResult.data.url;
           }
         }
       }
@@ -1752,9 +1775,9 @@ export default function Home() {
           body: formData
         });
         
-        const uploadResult = await uploadResponse.json();
-        if (uploadResult.success) {
-          scoreImageUrl = uploadResult.url;
+        const parseResult = await safeParseJSON(uploadResponse);
+        if (parseResult.success && parseResult.data?.success) {
+          scoreImageUrl = parseResult.data.url;
         }
       }
       
@@ -1778,11 +1801,11 @@ export default function Home() {
         })
       });
       
-      const shareResult = await shareResponse.json();
+      const shareParseResult = await safeParseJSON(shareResponse);
       
-      if (shareResult.success) {
+      if (shareParseResult.success && shareParseResult.data?.success) {
         // 使用当前域名拼接完整URL
-        const fullShareUrl = `${window.location.origin}/?share=${shareResult.shareId}`;
+        const fullShareUrl = `${window.location.origin}/?share=${shareParseResult.data.shareId}`;
         setShareUrl(fullShareUrl);
         // 复制到剪贴板
         try {
@@ -1792,7 +1815,9 @@ export default function Home() {
           alert(`分享链接：${fullShareUrl}`);
         }
       } else {
-        alert('创建分享链接失败');
+        const errorMsg = shareParseResult.error || shareParseResult.data?.error || '创建分享链接失败';
+        console.error('Share API error:', errorMsg);
+        alert(`分享失败: ${errorMsg}`);
       }
     } catch (error) {
       console.error('Share error:', error);
