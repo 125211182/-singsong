@@ -60,10 +60,10 @@ export async function POST(request: NextRequest) {
       contentType,
     });
 
-    // 生成签名URL（有效期30天）
+    // 生成签名URL（有效期90天）
     const url = await storage.generatePresignedUrl({
       key,
-      expireTime: 2592000, // 30天
+      expireTime: 7776000, // 90天
     });
 
     return NextResponse.json({
