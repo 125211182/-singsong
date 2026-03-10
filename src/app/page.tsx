@@ -1426,12 +1426,17 @@ export default function Home() {
   };
 
   // 将 AudioBuffer 转换为 WAV 格式
-  const audioBufferToWav = (buffer: AudioBuffer): Blob => {
-    const numOfChan = buffer.numberOfChannels;
-    const length = buffer.length * numOfChan * 2 + 44;
+  // 将 AudioBuffer 转换为 WAV 格式（支持降采样以减小文件大小）
+  const audioBufferToWav = (buffer: AudioBuffer, targetSampleRate: number = 22050): Blob => {
+    // 降采样处理：降低采样率以减小文件大小
+    const originalRate = buffer.sampleRate;
+    const ratio = originalRate / targetSampleRate;
+    const newLength = Math.floor(buffer.length / ratio);
+    const numOfChan = Math.min(buffer.numberOfChannels, 1); // 强制单声道以减小文件
+    const length = newLength * numOfChan * 2 + 44;
     const bufferArray = new ArrayBuffer(length);
     const view = new DataView(bufferArray);
-    const channels = [];
+    const channels: Float32Array[] = [];
     let sample: number;
     let offset = 0;
     let pos = 0;
@@ -1444,26 +1449,26 @@ export default function Home() {
     setUint32(view, 16, pos); pos += 4; // length = 16
     setUint16(view, 1, pos); pos += 2; // PCM (uncompressed)
     setUint16(view, numOfChan, pos); pos += 2; // number of channels
-    setUint32(view, buffer.sampleRate, pos); pos += 4; // sample rate
-    setUint32(view, buffer.sampleRate * 2 * numOfChan, pos); pos += 4; // avg. bytes/sec
+    setUint32(view, targetSampleRate, pos); pos += 4; // sample rate
+    setUint32(view, targetSampleRate * 2 * numOfChan, pos); pos += 4; // avg. bytes/sec
     setUint16(view, numOfChan * 2, pos); pos += 2; // block-align
     setUint16(view, 16, pos); pos += 2; // 16-bit
     setUint32(view, 0x61746164, pos); pos += 4; // "data" chunk
     setUint32(view, length - pos - 4, pos); pos += 4;
     
-    // 获取通道数据
-    for (let i = 0; i < buffer.numberOfChannels; i++) {
-      channels.push(buffer.getChannelData(i));
-    }
+    // 获取通道数据（只取第一个通道，即单声道）
+    const sourceChannel = buffer.getChannelData(0);
     
-    // 写入音频数据
+    // 写入音频数据（带降采样）
     while (pos < length) {
-      for (let i = 0; i < numOfChan; i++) {
-        sample = Math.max(-1, Math.min(1, channels[i][offset]));
+      // 使用简单的线性插值进行降采样
+      const srcIndex = Math.floor(offset * ratio);
+      if (srcIndex < sourceChannel.length) {
+        sample = Math.max(-1, Math.min(1, sourceChannel[srcIndex]));
         sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
         view.setInt16(pos, sample, true);
-        pos += 2;
       }
+      pos += 2;
       offset++;
     }
     
@@ -1650,6 +1655,18 @@ export default function Home() {
         // 从AudioBuffer转换为WAV文件上传
         setLoadingText('正在上传干声...');
         const wavBlob = audioBufferToWav(refBuffer);
+        
+        // 检查文件大小
+        const fileSizeMB = (wavBlob.size / (1024 * 1024)).toFixed(2);
+        console.log('干声文件大小:', fileSizeMB, 'MB');
+        
+        if (wavBlob.size > 50 * 1024 * 1024) {
+          alert(`干声文件太大 (${fileSizeMB}MB)，请使用较短的音频文件`);
+          setLoading(false);
+          setShareLoading(false);
+          return;
+        }
+        
         const file = new File([wavBlob], 'voice.wav', { type: 'audio/wav' });
         
         const formData = new FormData();
@@ -1728,22 +1745,31 @@ export default function Home() {
       if (accBuffer) {
         // 从AudioBuffer转换为WAV文件上传
         const wavBlob = audioBufferToWav(accBuffer);
-        const file = new File([wavBlob], 'accompaniment.wav', { type: 'audio/wav' });
         
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('type', 'accompaniment');
+        // 检查文件大小
+        const fileSizeMB = (wavBlob.size / (1024 * 1024)).toFixed(2);
+        console.log('伴奏文件大小:', fileSizeMB, 'MB');
         
-        const uploadResponse = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData
-        });
-        
-        const parseResult = await safeParseJSON(uploadResponse);
-        if (parseResult.success && parseResult.data?.success) {
-          accompanimentUrl = parseResult.data.url;
+        if (wavBlob.size > 50 * 1024 * 1024) {
+          console.warn('伴奏文件太大，跳过上传');
         } else {
-          console.error('Upload accompaniment failed:', parseResult.error);
+          const file = new File([wavBlob], 'accompaniment.wav', { type: 'audio/wav' });
+          
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('type', 'accompaniment');
+          
+          const uploadResponse = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData
+          });
+          
+          const parseResult = await safeParseJSON(uploadResponse);
+          if (parseResult.success && parseResult.data?.success) {
+            accompanimentUrl = parseResult.data.url;
+          } else {
+            console.error('Upload accompaniment failed:', parseResult.error);
+          }
         }
       } else {
         // 尝试从文件input获取

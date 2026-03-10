@@ -6,6 +6,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { S3Storage } from 'coze-coding-dev-sdk';
 
+// 增加body大小限制 - Next.js App Router 方式
+export const runtime = 'nodejs';
+export const maxDuration = 300; // 5分钟超时
+
 // 初始化对象存储
 const storage = new S3Storage({
   endpointUrl: process.env.COZE_BUCKET_ENDPOINT_URL,
