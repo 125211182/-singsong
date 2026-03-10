@@ -1614,12 +1614,15 @@ export default function Home() {
     setLoadingText('正在准备分享数据...');
     
     try {
-      // 1. 上传干声文件（如果有录制数据）
+      // 1. 上传干声文件（优先从内存中的AudioBuffer，其次从录制数据，最后从文件input）
       let voiceUrl = null;
-      const chunks = appDataRef.current.chunks;
-      if (chunks && chunks.length > 0) {
-        const blob = new Blob(chunks, { type: 'audio/webm' });
-        const file = new File([blob], 'voice.webm', { type: 'audio/webm' });
+      const refBuffer = data.refBuffer;
+      
+      if (refBuffer) {
+        // 从AudioBuffer转换为WAV文件上传
+        setLoadingText('正在上传干声...');
+        const wavBlob = audioBufferToWav(refBuffer);
+        const file = new File([wavBlob], 'voice.wav', { type: 'audio/wav' });
         
         const formData = new FormData();
         formData.append('file', file);
@@ -1634,14 +1637,16 @@ export default function Home() {
         if (uploadResult.success) {
           voiceUrl = uploadResult.url;
         }
-      }
-      
-      // 2. 如果没有录制数据，使用上传的干声
-      if (!voiceUrl) {
-        const refInput = fileRefRef.current;
-        if (refInput && refInput.files && refInput.files[0]) {
+      } else {
+        // 尝试从录制数据获取
+        const chunks = appDataRef.current.chunks;
+        if (chunks && chunks.length > 0) {
+          setLoadingText('正在上传录制数据...');
+          const blob = new Blob(chunks, { type: 'audio/webm' });
+          const file = new File([blob], 'voice.webm', { type: 'audio/webm' });
+          
           const formData = new FormData();
-          formData.append('file', refInput.files[0]);
+          formData.append('file', file);
           formData.append('type', 'voice');
           
           const uploadResponse = await fetch('/api/upload', {
@@ -1652,6 +1657,27 @@ export default function Home() {
           const uploadResult = await uploadResponse.json();
           if (uploadResult.success) {
             voiceUrl = uploadResult.url;
+          }
+        }
+        
+        // 尝试从文件input获取
+        if (!voiceUrl) {
+          const refInput = fileRefRef.current;
+          if (refInput && refInput.files && refInput.files[0]) {
+            setLoadingText('正在上传干声...');
+            const formData = new FormData();
+            formData.append('file', refInput.files[0]);
+            formData.append('type', 'voice');
+            
+            const uploadResponse = await fetch('/api/upload', {
+              method: 'POST',
+              body: formData
+            });
+            
+            const uploadResult = await uploadResponse.json();
+            if (uploadResult.success) {
+              voiceUrl = uploadResult.url;
+            }
           }
         }
       }
