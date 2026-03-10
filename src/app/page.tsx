@@ -118,6 +118,7 @@ export default function Home() {
   const [loadingText, setLoadingText] = useState('Processing...');
   const [studentCards, setStudentCards] = useState<React.ReactElement[]>([]);
   const [studentScoreData, setStudentScoreData] = useState<StudentScoreData[]>([]); // 存储评分数据用于分享
+  const [accLoaded, setAccLoaded] = useState(false); // 伴奏是否已加载（用于触发UI更新）
   const [scoreImage, setScoreImage] = useState<string | null>(null);
   const [updateCounter, setUpdateCounter] = useState(0); // 用于触发 UI 更新
   const [shareLoading, setShareLoading] = useState(false);
@@ -225,6 +226,7 @@ export default function Home() {
       } else {
         appDataRef.current.ctx = ctx;
         appDataRef.current.accBuffer = buffer;
+        setAccLoaded(true); // 标记伴奏已加载
         setUpdateCounter(prev => prev + 1);
       }
     } catch (e) {
@@ -1663,12 +1665,17 @@ export default function Home() {
       
       setLoadingText('正在上传伴奏...');
       
-      // 3. 上传伴奏（如果有）
+      // 3. 上传伴奏（优先从内存中的AudioBuffer，其次从文件input）
       let accompanimentUrl = null;
-      const accInput = fileAccRef.current;
-      if (accInput && accInput.files && accInput.files[0]) {
+      const accBuffer = appDataRef.current.accBuffer;
+      
+      if (accBuffer) {
+        // 从AudioBuffer转换为WAV文件上传
+        const wavBlob = audioBufferToWav(accBuffer);
+        const file = new File([wavBlob], 'accompaniment.wav', { type: 'audio/wav' });
+        
         const formData = new FormData();
-        formData.append('file', accInput.files[0]);
+        formData.append('file', file);
         formData.append('type', 'accompaniment');
         
         const uploadResponse = await fetch('/api/upload', {
@@ -1679,6 +1686,24 @@ export default function Home() {
         const uploadResult = await uploadResponse.json();
         if (uploadResult.success) {
           accompanimentUrl = uploadResult.url;
+        }
+      } else {
+        // 尝试从文件input获取
+        const accInput = fileAccRef.current;
+        if (accInput && accInput.files && accInput.files[0]) {
+          const formData = new FormData();
+          formData.append('file', accInput.files[0]);
+          formData.append('type', 'accompaniment');
+          
+          const uploadResponse = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData
+          });
+          
+          const uploadResult = await uploadResponse.json();
+          if (uploadResult.success) {
+            accompanimentUrl = uploadResult.url;
+          }
         }
       }
       
