@@ -6,13 +6,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 
-// 初始化Supabase客户端
-const supabase = getSupabaseClient();
-
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // 延迟初始化Supabase客户端
+  const supabase = getSupabaseClient();
+  
   try {
     const { id: shareId } = await params;
 

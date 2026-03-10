@@ -10,16 +10,24 @@ import { S3Storage } from 'coze-coding-dev-sdk';
 export const runtime = 'nodejs';
 export const maxDuration = 300; // 5分钟超时
 
-// 初始化对象存储
-const storage = new S3Storage({
-  endpointUrl: process.env.COZE_BUCKET_ENDPOINT_URL,
-  accessKey: '',
-  secretKey: '',
-  bucketName: process.env.COZE_BUCKET_NAME,
-  region: 'cn-beijing',
-});
+// 延迟初始化对象存储
+let storageInstance: S3Storage | null = null;
+
+function getStorage(): S3Storage {
+  if (!storageInstance) {
+    storageInstance = new S3Storage({
+      endpointUrl: process.env.COZE_BUCKET_ENDPOINT_URL,
+      accessKey: '',
+      secretKey: '',
+      bucketName: process.env.COZE_BUCKET_NAME,
+      region: 'cn-beijing',
+    });
+  }
+  return storageInstance;
+}
 
 export async function POST(request: NextRequest) {
+  const storage = getStorage();
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;

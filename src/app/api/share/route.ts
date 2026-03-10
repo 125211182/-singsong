@@ -7,15 +7,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { nanoid } from 'nanoid';
 
-// 初始化Supabase客户端
-const supabase = getSupabaseClient();
-
 // 生成唯一分享ID
 function generateShareId(): string {
   return nanoid(10);
 }
 
 export async function POST(request: NextRequest) {
+  // 延迟初始化Supabase客户端
+  const supabase = getSupabaseClient();
   try {
     const body = await request.json();
     const { 
