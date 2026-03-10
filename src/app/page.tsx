@@ -1169,20 +1169,20 @@ export default function Home() {
     else if (total >= 55) { rank = 'C-'; color = '#ff453a'; }
     else { rank = 'D'; color = '#ff6b6b'; }
 
-    // 生成乐句详细得分的UI
+    // 生成歌曲得分明细的UI
     const phraseDetails = phraseScores.length > 0 ? (
       <div className="phrase-details mt-3">
         <div className="phrase-details-header">
-          <span>📊 乐句得分分析</span>
+          <span>📊 歌曲得分明细</span>
           <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: 'normal' }}>
-            共 {phraseScores.length} 个乐句
+            共 {phraseScores.length} 个片段
           </span>
         </div>
         <div className="phrase-details-content">
           {phraseScores.map((phrase) => (
             <div key={phrase.id} className="phrase-item">
-              <div className="phrase-number">
-                {phrase.id}
+              <div className="phrase-time-badge">
+                {phrase.startTime.toFixed(1)}s-{phrase.endTime.toFixed(1)}s
               </div>
               <div className="phrase-info">
                 <div className="phrase-scores">
@@ -1204,9 +1204,6 @@ export default function Home() {
                       {Math.round(phrase.emotion)}
                     </span>
                   </div>
-                </div>
-                <div className="phrase-time">
-                  ⏱️ {phrase.startTime.toFixed(2)}s - {phrase.endTime.toFixed(2)}s
                 </div>
               </div>
             </div>
