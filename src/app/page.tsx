@@ -1623,8 +1623,17 @@ export default function Home() {
     const hasVoice = data.refBuffer !== null;
     const hasStudents = studentScoreData.length > 0;
     
+    // 调试信息
+    console.log('分享状态检查:', { 
+      hasVoice, 
+      hasStudents, 
+      refBufferExists: !!data.refBuffer,
+      accBufferExists: !!data.accBuffer,
+      studentCount: studentScoreData.length 
+    });
+    
     if (!hasVoice && !hasStudents) {
-      alert('请先上传干声或进行演唱评测');
+      alert('请先上传干声或进行演唱评测。\n\n调试信息：\n- 干声状态: ' + (hasVoice ? '已上传' : '未上传') + '\n- 学生记录: ' + (hasStudents ? '有' : '无'));
       return;
     }
     
