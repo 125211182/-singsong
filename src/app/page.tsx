@@ -1888,6 +1888,17 @@ export default function Home() {
   // 移动端当前激活的标签页
   const [mobileTab, setMobileTab] = useState<'main' | 'records' | 'score'>('main');
 
+  // 当移动端主控台可见且正在录音时，恢复drawLoop
+  useEffect(() => {
+    if (mobileTab === 'main' && appDataRef.current.isPlaying) {
+      // 延迟一点确保canvas已挂载
+      const timer = setTimeout(() => {
+        drawLoop();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [mobileTab]);
+
   return (
     <div className="flex h-screen overflow-hidden bg-[#121214] text-[#e0e0e0]">
       {/* Loading Overlay */}
