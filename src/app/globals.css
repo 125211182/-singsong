@@ -405,14 +405,6 @@ audio:hover {
   transition: 0.2s;
 }
 
-@media (max-width: 768px) {
-  .btn {
-    padding: 10px 12px;
-    font-size: 12px;
-    border-radius: 8px;
-  }
-}
-
 .btn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
@@ -427,53 +419,4 @@ audio:hover {
 .btn-stop {
   background: var(--danger);
   color: #fff;
-}
-
-/* 移动端响应式适配 */
-@media (max-width: 768px) {
-  /* 整体布局 - 三栏缩放显示 */
-  .flex.h-screen > div:first-child {
-    width: 180px !important;
-    min-width: 150px !important;
-  }
-  .flex.h-screen > div:last-child {
-    width: 200px !important;
-    min-width: 160px !important;
-  }
-  
-  /* 学生卡片适配 */
-  .student-card {
-    padding: 8px !important;
-    margin-bottom: 8px !important;
-  }
-  .student-card .card-header {
-    font-size: 11px !important;
-  }
-  .student-card .card-score {
-    font-size: 22px !important;
-  }
-  .student-card .card-rank {
-    font-size: 9px !important;
-    padding: 1px 4px !important;
-  }
-  .student-card .card-details {
-    font-size: 9px !important;
-  }
-  .student-card .phrase-analysis {
-    font-size: 9px !important;
-    padding: 4px !important;
-  }
-  .student-card .phrase-header {
-    font-size: 9px !important;
-  }
-  .student-card .phrase-item {
-    padding: 3px 5px !important;
-    font-size: 8px !important;
-  }
-  
-  /* 评语区域 */
-  .comment-box {
-    font-size: 9px !important;
-    padding: 4px !important;
-  }
 }

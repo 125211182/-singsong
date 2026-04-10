@@ -1885,6 +1885,9 @@ export default function Home() {
   const accBuffer = appDataRef.current.accBuffer;
   const students = appDataRef.current.students;
 
+  // 移动端当前激活的标签页
+  const [mobileTab, setMobileTab] = useState<'main' | 'records' | 'score'>('main');
+
   return (
     <div className="flex h-screen overflow-hidden bg-[#121214] text-[#e0e0e0]">
       {/* Loading Overlay */}
@@ -1895,74 +1898,74 @@ export default function Home() {
         </div>
       )}
 
-      {/* 左侧：课堂记录 - 桌面:320px, 移动端:180px */}
-      <div className="flex h-full w-[320px] min-w-[180px] shrink-0 flex-col border-r border-[#333] bg-[#18181a] max-md:w-[180px]">
-        <div className="border-b border-[#333] bg-[#1c1c1f] px-3 py-3 max-md:px-2">
-          <div className="flex items-center justify-between text-sm font-bold text-white max-md:text-xs">
+      {/* 桌面端左侧：课堂记录 */}
+      <div className="hidden md:flex h-full w-[320px] shrink-0 flex-col border-r border-[#333] bg-[#18181a]">
+        <div className="border-b border-[#333] bg-[#1c1c1f] px-5 py-5">
+          <div className="flex items-center justify-between text-base font-bold text-white">
             <span>课堂记录</span>
             <span className="text-[#0a84ff]">{students.length} / 4</span>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto px-[10px] py-[10px] max-md:px-1">
+        <div className="flex-1 overflow-y-auto px-[15px] py-[15px]">
           {studentCards.length === 0 ? (
-            <div className="mt-[30px] text-center text-[11px] text-[#555] max-md:text-[10px]">
+            <div className="mt-[50px] text-center text-[13px] text-[#555]">
               暂无记录<br />请在中间区域开始
             </div>
           ) : (
             studentCards
           )}
         </div>
-        <div className="border-t border-[#333] px-[10px] py-[10px] flex flex-col gap-2 max-md:px-1">
+        <div className="border-t border-[#333] px-[15px] py-[15px] flex flex-col gap-2">
           <button
             onClick={handleShare}
             disabled={students.length === 0}
-            className="w-full rounded-lg border-none bg-[#0a84ff] py-2 text-[12px] text-white cursor-pointer hover:bg-[#0070e0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed max-md:py-1.5 max-md:text-[11px]"
+            className="w-full rounded-lg border-none bg-[#0a84ff] py-3 text-[14px] text-white cursor-pointer hover:bg-[#0070e0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            🔗 分享课堂
+            分享课堂
           </button>
           <button
             onClick={resetClassroom}
-            className="w-full rounded-lg border-none bg-[#333] py-2 text-[12px] text-[#aaa] cursor-pointer hover:bg-[#444] transition-colors max-md:py-1.5 max-md:text-[11px]"
+            className="w-full rounded-lg border-none bg-[#333] py-3 text-[14px] text-[#aaa] cursor-pointer hover:bg-[#444] transition-colors"
           >
-            🔄 重置课堂
+            重置课堂
           </button>
         </div>
       </div>
 
       {/* 中间：主控台 */}
-      <div className="flex flex-1 flex-col items-center overflow-y-auto p-3 border-r border-[#333] max-md:p-2">
-        <div className="w-full max-w-[1200px] rounded-2xl bg-[#1e1e20] p-4 shadow-[0_10px_40px_rgba(0,0,0,0.4)] border border-[#333] max-md:p-3">
-          <h2 className="mb-3 flex items-center justify-between text-sm max-md:text-xs">
-            <span>🎹 智能声乐评测 <span style={{ fontSize: '10px', background: '#333', padding: '2px 4px', borderRadius: '4px', color: '#aaa' }}>V9.0</span></span>
-            <span className="text-sm font-bold text-[#0a84ff] max-md:text-xs">
-              {refBuffer ? `当前: 第 ${students.length + 1} 位` : '等待文件'}
+      <div className="flex flex-1 flex-col items-center overflow-y-auto p-5 border-r border-[#333] md:p-3">
+        <div className="w-full max-w-[1200px] rounded-2xl bg-[#1e1e20] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.4)] border border-[#333]">
+          <h2 className="mb-5 flex items-center justify-between text-lg">
+            <span>🎹 智能声乐评测 <span style={{ fontSize: '12px', background: '#333', padding: '2px 6px', borderRadius: '4px', color: '#aaa' }}>V9.0</span></span>
+            <span className="text-base font-bold text-[#0a84ff]">
+              {refBuffer ? `当前: 第 ${students.length + 1} 位同学` : '等待文件'}
             </span>
           </h2>
 
-          <div className="mb-3 grid grid-cols-3 gap-[6px] max-md:gap-[4px]">
+          <div className="mb-5 grid grid-cols-3 gap-[10px]">
             <div
               onClick={() => fileRefRef.current?.click()}
               className={`track-slot ${refBuffer ? 'loaded' : ''}`}
             >
               <span className="icon-status">{refBuffer ? '✅' : '🗣️'}</span>
-              <span className="slot-label max-md:text-[10px]">{refBuffer ? '干声已就绪' : '1. 干声'}</span>
-              <span className="slot-desc max-md:hidden">AI分析旋律</span>
+              <span className="slot-label">{refBuffer ? '干声已就绪' : '1. 干声(必选)'}</span>
+              <span className="slot-desc">AI分析旋律</span>
             </div>
             <div
               onClick={() => fileAccRef.current?.click()}
               className={`track-slot ${accBuffer ? 'loaded' : ''}`}
             >
               <span className="icon-status">{accBuffer ? '✅' : '🎼'}</span>
-              <span className="slot-label max-md:text-[10px]">{accBuffer ? '伴奏已就绪' : '2. 伴奏'}</span>
-              <span className="slot-desc max-md:hidden">背景播放</span>
+              <span className="slot-label">{accBuffer ? '伴奏已就绪' : '2. 伴奏(可选)'}</span>
+              <span className="slot-desc">背景播放</span>
             </div>
             <div
               onClick={() => fileScoreRef.current?.click()}
               className={`track-slot ${scoreImage ? 'loaded' : ''}`}
             >
               <span className="icon-status">{scoreImage ? '✅' : '📄'}</span>
-              <span className="slot-label max-md:text-[10px]">{scoreImage ? '乐谱已加载' : '3. 乐谱'}</span>
-              <span className="slot-desc max-md:hidden">右侧显示</span>
+              <span className="slot-label">{scoreImage ? '乐谱已加载' : '3. 乐谱(可选)'}</span>
+              <span className="slot-desc">右侧显示</span>
             </div>
           </div>
 
@@ -1988,28 +1991,28 @@ export default function Home() {
             className="hidden"
           />
 
-          <div className="relative mb-3 h-[180px] overflow-hidden rounded-xl border-2 border-[#333] bg-black max-md:h-[140px]">
+          <div className="relative mb-5 h-[240px] overflow-hidden rounded-xl border-2 border-[#333] bg-black">
             <canvas ref={canvasRef} className="block h-full w-full" />
-            <div className="absolute right-[10px] top-[10px] text-right pointer-events-none">
-              <div className="text-[24px] font-black text-[#30d158] transition-colors max-md:text-[18px]" id="realtimeScore">
+            <div className="absolute right-[15px] top-[15px] text-right pointer-events-none">
+              <div className="text-[32px] font-black text-[#30d158] transition-colors" id="realtimeScore">
                 {realtimeScore}
               </div>
-              <div className="mt-[3px] text-[11px] text-[#aaa] max-md:text-[10px]">{realtimeStatus}</div>
+              <div className="mt-[5px] text-[14px] text-[#aaa]">{realtimeStatus}</div>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-[10px] max-md:gap-[6px]">
+          <div className="grid grid-cols-2 gap-[15px]">
             <button
               onClick={startSession}
               disabled={!refBuffer || students.length >= 4}
-              className="btn btn-start max-md:py-2 max-md:text-[12px]"
+              className="btn btn-start"
             >
-              🎙️ 第 {students.length + 1} 位 (开始)
+              🎙️ 第 {students.length + 1} 位同学 (开始)
             </button>
             <button
               onClick={stopSession}
               disabled={!appDataRef.current.isPlaying}
-              className="btn btn-stop max-md:py-2 max-md:text-[12px]"
+              className="btn btn-stop"
             >
               ⏹ 结束评测
             </button>
@@ -2017,21 +2020,151 @@ export default function Home() {
         </div>
       </div>
 
-      {/* 右侧：乐谱视窗 - 桌面:600px, 移动端:200px */}
-      <div className="flex h-full w-[600px] min-w-[200px] shrink-0 flex-col bg-[#151517] max-md:w-[200px]">
-        <div className="border-b border-[#333] bg-[#1c1c1f] px-4 py-2 flex items-center justify-between max-md:px-2">
-          <span className="font-bold text-sm max-md:text-xs">🎼 乐谱视窗</span>
-          <span className="text-[10px] text-[#666] max-md:hidden">支持滚动查看</span>
+      {/* 桌面端右侧：乐谱视窗 */}
+      <div className="hidden md:flex h-full w-[600px] shrink-0 flex-col bg-[#151517]">
+        <div className="border-b border-[#333] bg-[#1c1c1f] px-8 py-[15px] flex items-center justify-between">
+          <span className="font-bold text-lg">🎼 乐谱视窗</span>
+          <span className="text-[12px] text-[#666]">支持滚动查看</span>
         </div>
-        <div className="flex-1 overflow-y-auto p-[15px] max-md:p-[8px]" style={{ backgroundImage: 'radial-gradient(#222 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
+        <div className="flex-1 overflow-y-auto p-[25px]" style={{ backgroundImage: 'radial-gradient(#222 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
           {scoreImage ? (
             <img src={scoreImage} alt="Sheet Music" className="w-full rounded-lg shadow-[0_4px_10px_rgba(0,0,0,0.5)]" />
           ) : (
-            <div className="mt-[30%] text-center text-[#555] -translate-y-1/2 text-[11px] max-md:text-[10px]">
+            <div className="mt-[50%] text-center text-[#555] -translate-y-1/2">
               未上传乐谱<br />
-              <span className="text-[10px] text-[#444]">请点击"3. 乐谱"加载</span>
+              <span className="text-[12px] text-[#444]">请点击"3. 乐谱"加载图片</span>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* 移动端视图 */}
+      <div className="md:hidden fixed inset-0 flex flex-col bg-[#121214]">
+        {/* 移动端内容区 */}
+        <div className="flex-1 overflow-y-auto pb-[70px]">
+          {/* 主控台视图 */}
+          {mobileTab === 'main' && (
+            <div className="p-3">
+              <div className="rounded-2xl bg-[#1e1e20] p-4 border border-[#333]">
+                <h2 className="mb-3 flex items-center justify-between text-sm font-bold">
+                  <span>🎹 智能声乐评测 <span style={{ fontSize: '10px', background: '#333', padding: '2px 4px', borderRadius: '4px', color: '#aaa' }}>V9.0</span></span>
+                  <span className="text-[#0a84ff] text-xs">
+                    {refBuffer ? `第 ${students.length + 1} 位` : '等待文件'}
+                  </span>
+                </h2>
+
+                <div className="mb-3 grid grid-cols-3 gap-2">
+                  <div onClick={() => fileRefRef.current?.click()} className={`track-slot ${refBuffer ? 'loaded' : ''}`}>
+                    <span className="icon-status text-base">{refBuffer ? '✅' : '🗣️'}</span>
+                    <span className="slot-label text-[11px]">{refBuffer ? '干声' : '1.干声'}</span>
+                    <span className="slot-desc text-[9px]">必选</span>
+                  </div>
+                  <div onClick={() => fileAccRef.current?.click()} className={`track-slot ${accBuffer ? 'loaded' : ''}`}>
+                    <span className="icon-status text-base">{accBuffer ? '✅' : '🎼'}</span>
+                    <span className="slot-label text-[11px]">{accBuffer ? '伴奏' : '2.伴奏'}</span>
+                    <span className="slot-desc text-[9px]">可选</span>
+                  </div>
+                  <div onClick={() => fileScoreRef.current?.click()} className={`track-slot ${scoreImage ? 'loaded' : ''}`}>
+                    <span className="icon-status text-base">{scoreImage ? '✅' : '📄'}</span>
+                    <span className="slot-label text-[11px]">{scoreImage ? '乐谱' : '3.乐谱'}</span>
+                    <span className="slot-desc text-[9px]">可选</span>
+                  </div>
+                </div>
+
+                <div className="relative h-[160px] mb-3 rounded-xl border-2 border-[#333] bg-black">
+                  <canvas ref={canvasRef} className="block h-full w-full" />
+                  <div className="absolute right-2 top-2 text-right">
+                    <div className="text-[22px] font-black text-[#30d158]">{realtimeScore}</div>
+                    <div className="text-[10px] text-[#aaa]">{realtimeStatus}</div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={startSession} disabled={!refBuffer || students.length >= 4} className="btn btn-start py-3 text-sm">
+                    🎙️ 第 {students.length + 1} 位
+                  </button>
+                  <button onClick={stopSession} disabled={!appDataRef.current.isPlaying} className="btn btn-stop py-3 text-sm">
+                    ⏹ 结束
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 课堂记录视图 */}
+          {mobileTab === 'records' && (
+            <div className="p-3">
+              <div className="rounded-2xl bg-[#1e1e20] p-4 border border-[#333]">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="font-bold text-sm">📋 课堂记录</span>
+                  <span className="text-[#0a84ff] text-xs">{students.length} / 4</span>
+                </div>
+                <div className="space-y-3">
+                  {studentCards.length === 0 ? (
+                    <div className="text-center text-[#555] text-xs py-8">
+                      暂无记录
+                    </div>
+                  ) : (
+                    studentCards
+                  )}
+                </div>
+                <div className="mt-4 flex flex-col gap-2">
+                  <button onClick={handleShare} disabled={students.length === 0} className="w-full bg-[#0a84ff] text-white py-3 rounded-lg text-sm disabled:opacity-50">
+                    分享课堂
+                  </button>
+                  <button onClick={resetClassroom} className="w-full bg-[#333] text-[#aaa] py-3 rounded-lg text-sm">
+                    重置课堂
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 乐谱视窗视图 */}
+          {mobileTab === 'score' && (
+            <div className="p-3 h-full">
+              <div className="rounded-2xl bg-[#1e1e20] p-4 border border-[#333] h-full">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="font-bold text-sm">🎼 乐谱视窗</span>
+                </div>
+                <div className="overflow-y-auto rounded-lg" style={{ backgroundImage: 'radial-gradient(#222 1px, transparent 1px)', backgroundSize: '16px 16px', maxHeight: 'calc(100vh - 180px)' }}>
+                  {scoreImage ? (
+                    <img src={scoreImage} alt="乐谱" className="w-full rounded-lg" />
+                  ) : (
+                    <div className="text-center text-[#555] text-xs py-12">
+                      未上传乐谱<br />
+                      <span className="text-[10px] text-[#444]">请点击"3. 乐谱"加载</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 移动端底部标签栏 */}
+        <div className="fixed bottom-0 left-0 right-0 bg-[#1c1c1f] border-t border-[#333] flex">
+          <button
+            onClick={() => setMobileTab('main')}
+            className={`flex-1 py-3 text-center text-xs ${mobileTab === 'main' ? 'text-[#0a84ff] border-t-2 border-[#0a84ff]' : 'text-[#666]'}`}
+          >
+            <div className="text-base mb-0.5">🎹</div>
+            主控台
+          </button>
+          <button
+            onClick={() => setMobileTab('records')}
+            className={`flex-1 py-3 text-center text-xs ${mobileTab === 'records' ? 'text-[#0a84ff] border-t-2 border-[#0a84ff]' : 'text-[#666]'}`}
+          >
+            <div className="text-base mb-0.5">📋</div>
+            课堂记录
+          </button>
+          <button
+            onClick={() => setMobileTab('score')}
+            className={`flex-1 py-3 text-center text-xs ${mobileTab === 'score' ? 'text-[#0a84ff] border-t-2 border-[#0a84ff]' : 'text-[#666]'}`}
+          >
+            <div className="text-base mb-0.5">🎼</div>
+            乐谱视窗
+          </button>
         </div>
       </div>
     </div>
