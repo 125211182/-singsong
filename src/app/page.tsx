@@ -1895,34 +1895,34 @@ export default function Home() {
         </div>
       )}
 
-      {/* 左侧：课堂记录 */}
-      <div className="flex h-full w-[320px] shrink-0 flex-col border-r border-[#333] bg-[#18181a]">
-        <div className="border-b border-[#333] bg-[#1c1c1f] px-5 py-5">
-          <div className="flex items-center justify-between text-base font-bold text-white">
+      {/* 左侧：课堂记录 - 桌面:320px, 移动端:180px */}
+      <div className="flex h-full w-[320px] min-w-[180px] shrink-0 flex-col border-r border-[#333] bg-[#18181a] max-md:w-[180px]">
+        <div className="border-b border-[#333] bg-[#1c1c1f] px-3 py-3 max-md:px-2">
+          <div className="flex items-center justify-between text-sm font-bold text-white max-md:text-xs">
             <span>课堂记录</span>
             <span className="text-[#0a84ff]">{students.length} / 4</span>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto px-[15px] py-[15px]">
+        <div className="flex-1 overflow-y-auto px-[10px] py-[10px] max-md:px-1">
           {studentCards.length === 0 ? (
-            <div className="mt-[50px] text-center text-[13px] text-[#555]">
+            <div className="mt-[30px] text-center text-[11px] text-[#555] max-md:text-[10px]">
               暂无记录<br />请在中间区域开始
             </div>
           ) : (
             studentCards
           )}
         </div>
-        <div className="border-t border-[#333] px-[15px] py-[15px] flex flex-col gap-2">
+        <div className="border-t border-[#333] px-[10px] py-[10px] flex flex-col gap-2 max-md:px-1">
           <button
             onClick={handleShare}
             disabled={students.length === 0}
-            className="w-full rounded-lg border-none bg-[#0a84ff] py-3 text-[14px] text-white cursor-pointer hover:bg-[#0070e0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full rounded-lg border-none bg-[#0a84ff] py-2 text-[12px] text-white cursor-pointer hover:bg-[#0070e0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed max-md:py-1.5 max-md:text-[11px]"
           >
             🔗 分享课堂
           </button>
           <button
             onClick={resetClassroom}
-            className="w-full rounded-lg border-none bg-[#333] py-3 text-[14px] text-[#aaa] cursor-pointer hover:bg-[#444] transition-colors"
+            className="w-full rounded-lg border-none bg-[#333] py-2 text-[12px] text-[#aaa] cursor-pointer hover:bg-[#444] transition-colors max-md:py-1.5 max-md:text-[11px]"
           >
             🔄 重置课堂
           </button>
@@ -1930,39 +1930,39 @@ export default function Home() {
       </div>
 
       {/* 中间：主控台 */}
-      <div className="flex flex-1 flex-col items-center overflow-y-auto p-5 border-r border-[#333]">
-        <div className="w-full max-w-[1200px] rounded-2xl bg-[#1e1e20] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.4)] border border-[#333]">
-          <h2 className="mb-5 flex items-center justify-between text-lg">
-            <span>🎹 智能声乐评测 <span style={{ fontSize: '12px', background: '#333', padding: '2px 6px', borderRadius: '4px', color: '#aaa' }}>V9.0 细化版</span></span>
-            <span className="text-base font-bold text-[#0a84ff]">
-              {refBuffer ? `当前: 第 ${students.length + 1} 位同学` : '等待文件'}
+      <div className="flex flex-1 flex-col items-center overflow-y-auto p-3 border-r border-[#333] max-md:p-2">
+        <div className="w-full max-w-[1200px] rounded-2xl bg-[#1e1e20] p-4 shadow-[0_10px_40px_rgba(0,0,0,0.4)] border border-[#333] max-md:p-3">
+          <h2 className="mb-3 flex items-center justify-between text-sm max-md:text-xs">
+            <span>🎹 智能声乐评测 <span style={{ fontSize: '10px', background: '#333', padding: '2px 4px', borderRadius: '4px', color: '#aaa' }}>V9.0</span></span>
+            <span className="text-sm font-bold text-[#0a84ff] max-md:text-xs">
+              {refBuffer ? `当前: 第 ${students.length + 1} 位` : '等待文件'}
             </span>
           </h2>
 
-          <div className="mb-5 grid grid-cols-3 gap-[10px]">
+          <div className="mb-3 grid grid-cols-3 gap-[6px] max-md:gap-[4px]">
             <div
               onClick={() => fileRefRef.current?.click()}
               className={`track-slot ${refBuffer ? 'loaded' : ''}`}
             >
               <span className="icon-status">{refBuffer ? '✅' : '🗣️'}</span>
-              <span className="slot-label">{refBuffer ? '干声已就绪' : '1. 干声(必选)'}</span>
-              <span className="slot-desc">AI分析旋律</span>
+              <span className="slot-label max-md:text-[10px]">{refBuffer ? '干声已就绪' : '1. 干声'}</span>
+              <span className="slot-desc max-md:hidden">AI分析旋律</span>
             </div>
             <div
               onClick={() => fileAccRef.current?.click()}
               className={`track-slot ${accBuffer ? 'loaded' : ''}`}
             >
               <span className="icon-status">{accBuffer ? '✅' : '🎼'}</span>
-              <span className="slot-label">{accBuffer ? '伴奏已就绪' : '2. 伴奏(可选)'}</span>
-              <span className="slot-desc">背景播放</span>
+              <span className="slot-label max-md:text-[10px]">{accBuffer ? '伴奏已就绪' : '2. 伴奏'}</span>
+              <span className="slot-desc max-md:hidden">背景播放</span>
             </div>
             <div
               onClick={() => fileScoreRef.current?.click()}
               className={`track-slot ${scoreImage ? 'loaded' : ''}`}
             >
               <span className="icon-status">{scoreImage ? '✅' : '📄'}</span>
-              <span className="slot-label">{scoreImage ? '乐谱已加载' : '3. 乐谱(可选)'}</span>
-              <span className="slot-desc">右侧显示</span>
+              <span className="slot-label max-md:text-[10px]">{scoreImage ? '乐谱已加载' : '3. 乐谱'}</span>
+              <span className="slot-desc max-md:hidden">右侧显示</span>
             </div>
           </div>
 
@@ -1988,28 +1988,28 @@ export default function Home() {
             className="hidden"
           />
 
-          <div className="relative mb-5 h-[240px] overflow-hidden rounded-xl border-2 border-[#333] bg-black">
+          <div className="relative mb-3 h-[180px] overflow-hidden rounded-xl border-2 border-[#333] bg-black max-md:h-[140px]">
             <canvas ref={canvasRef} className="block h-full w-full" />
-            <div className="absolute right-[15px] top-[15px] text-right pointer-events-none">
-              <div className="text-[32px] font-black text-[#30d158] transition-colors" id="realtimeScore">
+            <div className="absolute right-[10px] top-[10px] text-right pointer-events-none">
+              <div className="text-[24px] font-black text-[#30d158] transition-colors max-md:text-[18px]" id="realtimeScore">
                 {realtimeScore}
               </div>
-              <div className="mt-[5px] text-[14px] text-[#aaa]">{realtimeStatus}</div>
+              <div className="mt-[3px] text-[11px] text-[#aaa] max-md:text-[10px]">{realtimeStatus}</div>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-[15px]">
+          <div className="grid grid-cols-2 gap-[10px] max-md:gap-[6px]">
             <button
               onClick={startSession}
               disabled={!refBuffer || students.length >= 4}
-              className="btn btn-start"
+              className="btn btn-start max-md:py-2 max-md:text-[12px]"
             >
-              🎙️ 第 {students.length + 1} 位同学 (开始)
+              🎙️ 第 {students.length + 1} 位 (开始)
             </button>
             <button
               onClick={stopSession}
               disabled={!appDataRef.current.isPlaying}
-              className="btn btn-stop"
+              className="btn btn-stop max-md:py-2 max-md:text-[12px]"
             >
               ⏹ 结束评测
             </button>
@@ -2017,19 +2017,19 @@ export default function Home() {
         </div>
       </div>
 
-      {/* 右侧：乐谱视窗 */}
-      <div className="flex h-full w-[600px] shrink-0 flex-col bg-[#151517]">
-        <div className="border-b border-[#333] bg-[#1c1c1f] px-8 py-[15px] flex items-center justify-between">
-          <span className="font-bold text-lg">🎼 乐谱视窗</span>
-          <span className="text-[12px] text-[#666]">支持滚动查看</span>
+      {/* 右侧：乐谱视窗 - 桌面:600px, 移动端:200px */}
+      <div className="flex h-full w-[600px] min-w-[200px] shrink-0 flex-col bg-[#151517] max-md:w-[200px]">
+        <div className="border-b border-[#333] bg-[#1c1c1f] px-4 py-2 flex items-center justify-between max-md:px-2">
+          <span className="font-bold text-sm max-md:text-xs">🎼 乐谱视窗</span>
+          <span className="text-[10px] text-[#666] max-md:hidden">支持滚动查看</span>
         </div>
-        <div className="flex-1 overflow-y-auto p-[25px]" style={{ backgroundImage: 'radial-gradient(#222 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
+        <div className="flex-1 overflow-y-auto p-[15px] max-md:p-[8px]" style={{ backgroundImage: 'radial-gradient(#222 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
           {scoreImage ? (
             <img src={scoreImage} alt="Sheet Music" className="w-full rounded-lg shadow-[0_4px_10px_rgba(0,0,0,0.5)]" />
           ) : (
-            <div className="mt-[50%] text-center text-[#555] -translate-y-1/2">
+            <div className="mt-[30%] text-center text-[#555] -translate-y-1/2 text-[11px] max-md:text-[10px]">
               未上传乐谱<br />
-              <span className="text-[12px] text-[#444]">请点击"3. 乐谱"加载图片</span>
+              <span className="text-[10px] text-[#444]">请点击"3. 乐谱"加载</span>
             </div>
           )}
         </div>
