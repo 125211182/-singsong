@@ -111,6 +111,7 @@ interface AppData {
 export default function Home() {
   // Refs (用于可变数据，避免闭包问题)
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const mobileCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileRefRef = useRef<HTMLInputElement>(null);
   const fileAccRef = useRef<HTMLInputElement>(null);
   const fileScoreRef = useRef<HTMLInputElement>(null);
@@ -385,7 +386,9 @@ export default function Home() {
     // 实时模式：正在播放时才继续
     if (!preview && !data.isPlaying) return;
 
-    const canvas = canvasRef.current;
+    // 根据当前视图选择正确的 canvas（桌面端 vs 移动端）
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    const canvas = isMobile ? mobileCanvasRef.current : canvasRef.current;
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
@@ -660,33 +663,32 @@ export default function Home() {
     const scoreRhythm = Math.min(100, completionScore + rhythmStability + noteAccuracy + articulation);
 
     // ========== 情绪评分（20%）- 专业版 ==========
-    if (studentVol.length === 0) {
-      return;
-    }
-
+    // 即使没有音量数据，也使用默认值继续生成评分
+    const volData = studentVol.length > 0 ? studentVol : [0.02];
+    
     // 计算各项指标
-    const volMean = studentVol.reduce((a, b) => a + b, 0) / studentVol.length;
-    const volMin = Math.min(...studentVol);
-    const volMax = Math.max(...studentVol);
+    const volMean = volData.reduce((a, b) => a + b, 0) / volData.length;
+    const volMin = Math.min(...volData);
+    const volMax = Math.max(...volData);
     const dynamicRange = volMax - volMin;
-    const volStd = Math.sqrt(studentVol.reduce((a, b) => a + Math.pow(b - volMean, 2), 0) / studentVol.length);
+    const volStd = Math.sqrt(volData.reduce((a, b) => a + Math.pow(b - volMean, 2), 0) / volData.length);
 
     // 连贯性分析：声音是否流畅，是否有断音
     let smoothnessScore = 0;
     let pauseCount = 0;
-    for (let i = 1; i < studentVol.length; i++) {
-      if (studentVol[i] < 0.01 && studentVol[i - 1] >= 0.01) {
+    for (let i = 1; i < volData.length; i++) {
+      if (volData[i] < 0.01 && volData[i - 1] >= 0.01) {
         pauseCount++;
       }
     }
-    const pauseRatio = pauseCount / (studentVol.length / 50); // 每秒的停顿次数
+    const pauseRatio = pauseCount / (volData.length / 50); // 每秒的停顿次数
 
     // 气息控制分析：音量持续能力和稳定性
     let breathControl = 0;
     let sustainSegments = 0;
     let currentSegment = 0;
-    for (let i = 0; i < studentVol.length; i++) {
-      if (studentVol[i] > 0.02) {
+    for (let i = 0; i < volData.length; i++) {
+      if (volData[i] > 0.02) {
         currentSegment++;
         if (currentSegment > 10) { // 持续超过10帧视为有效气息
           sustainSegments++;
@@ -695,7 +697,7 @@ export default function Home() {
         currentSegment = 0;
       }
     }
-    const sustainRatio = sustainSegments / (studentVol.length / 20);
+    const sustainRatio = sustainSegments / (volData.length / 20);
 
     // 基础分
     let scoreEmotion = 50;
@@ -1900,6 +1902,11 @@ export default function Home() {
       canvas.width = canvas.offsetWidth;
       canvas.height = canvas.offsetHeight;
     }
+    const mobileCanvas = mobileCanvasRef.current;
+    if (mobileCanvas) {
+      mobileCanvas.width = mobileCanvas.offsetWidth;
+      mobileCanvas.height = mobileCanvas.offsetHeight;
+    }
   }, []);
 
   // 检测 URL 中的分享参数并加载数据
@@ -2126,7 +2133,7 @@ export default function Home() {
                 </div>
 
                 <div className="relative h-[160px] mb-3 rounded-xl border-2 border-[#333] bg-black">
-                  <canvas ref={canvasRef} className="block h-full w-full" />
+                  <canvas ref={mobileCanvasRef} className="block h-full w-full" />
                   <div className="absolute right-2 top-2 text-right">
                     <div className="text-[22px] font-black text-success">{realtimeScore}</div>
                     <div className="text-[10px] text-[#aaa]">{realtimeStatus}</div>
