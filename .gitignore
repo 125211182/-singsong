@@ -54,3 +54,6 @@ output.log
 *.log
 *.log.*
 logs/
+
+# Preview files
+.preview
