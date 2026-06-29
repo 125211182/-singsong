@@ -20,6 +20,7 @@ import {
   Share2,
   RotateCcw
 } from 'lucide-react';
+import MelodyPortrait from '@/components/MelodyPortrait';
 
 // ================= 配置 (V8.3 暖心版参数) =================
 const CONFIG = {
@@ -68,6 +69,10 @@ interface StudentScoreData {
   comments: ScoreComments;
   phraseScores: PhraseScore[];
   audioUrl?: string; // 录音文件URL（分享后才有）
+  // 演唱画像数据
+  melodyData?: { time: number; midi: number }[];
+  sampleData?: SampleData[];
+  totalDuration?: number;
 }
 
 // 采样点数据（用于乐句分析）
@@ -77,6 +82,7 @@ interface SampleData {
   hasPitch: boolean;
   isHit: boolean;
   pitchDiff?: number;
+  midi?: number; // 实际检测到的 MIDI 音高（用于演唱画像）
 }
 
 interface AppData {
@@ -488,7 +494,8 @@ export default function Home() {
             volume: rms,
             hasPitch: true,
             isHit: isHit,
-            pitchDiff: pitchDiff
+            pitchDiff: pitchDiff,
+            midi: displayMidi
           });
         } else {
           setRealtimeScore('...');
@@ -1302,7 +1309,7 @@ export default function Home() {
 
     setStudentCards(prev => [card, ...prev]);
     
-    // 保存评分数据用于分享
+    // 保存评分数据用于分享（包含演唱画像数据）
     const scoreData: StudentScoreData = {
       name,
       total,
@@ -1312,7 +1319,11 @@ export default function Home() {
       rank,
       rankColor: color,
       comments,
-      phraseScores
+      phraseScores,
+      // 演唱画像数据
+      melodyData: data.melodyData.map(p => ({ time: p.time, midi: p.midi })),
+      sampleData: [...data.stats.sampleData],
+      totalDuration: data.melodyData.length > 0 ? data.melodyData[data.melodyData.length - 1].time : 0
     };
     setStudentScoreData(prev => [scoreData, ...prev]);
     
@@ -1942,7 +1953,20 @@ export default function Home() {
               暂无记录<br />请在中间区域开始
             </div>
           ) : (
-            studentCards
+            studentScoreData.map((score, idx) => (
+              <div key={idx}>
+                {studentCards[studentCards.length - 1 - idx]}
+                {/* 演唱画像 */}
+                {score.melodyData && score.sampleData && score.totalDuration && (
+                  <MelodyPortrait
+                    melodyData={score.melodyData}
+                    sampleData={score.sampleData}
+                    totalDuration={score.totalDuration}
+                    studentName={score.name}
+                  />
+                )}
+              </div>
+            ))
           )}
         </div>
         <div className="border-t border-[#333] px-[15px] py-[15px] flex flex-col gap-2">
@@ -2135,7 +2159,20 @@ export default function Home() {
                       暂无记录
                     </div>
                   ) : (
-                    studentCards
+                    studentScoreData.map((score, idx) => (
+                      <div key={idx}>
+                        {studentCards[studentCards.length - 1 - idx]}
+                        {/* 演唱画像 */}
+                        {score.melodyData && score.sampleData && score.totalDuration && (
+                          <MelodyPortrait
+                            melodyData={score.melodyData}
+                            sampleData={score.sampleData}
+                            totalDuration={score.totalDuration}
+                            studentName={score.name}
+                          />
+                        )}
+                      </div>
+                    ))
                   )}
                 </div>
                 <div className="mt-4 flex flex-col gap-2">
