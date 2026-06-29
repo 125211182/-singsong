@@ -85,7 +85,8 @@ interface AppData {
 
 export default function Home() {
   // Refs (用于可变数据，避免闭包问题)
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const desktopCanvasRef = useRef<HTMLCanvasElement>(null);
+  const mobileCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileRefRef = useRef<HTMLInputElement>(null);
   const fileAccRef = useRef<HTMLInputElement>(null);
   const fileScoreRef = useRef<HTMLInputElement>(null);
@@ -360,8 +361,20 @@ export default function Home() {
     // 实时模式：正在播放时才继续
     if (!preview && !data.isPlaying) return;
 
-    const canvas = canvasRef.current;
+    // 根据屏幕尺寸选择正确的 canvas
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    const canvas = isMobile ? mobileCanvasRef.current : desktopCanvasRef.current;
     if (!canvas) return;
+
+    // 确保 canvas 尺寸正确
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      const dpr = window.devicePixelRatio || 1;
+      if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+      }
+    }
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -1865,11 +1878,16 @@ export default function Home() {
 
   // ================= 初始化画布 =================
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (canvas) {
-      canvas.width = canvas.offsetWidth;
-      canvas.height = canvas.offsetHeight;
-    }
+    const initCanvas = (canvas: HTMLCanvasElement | null) => {
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+      }
+    };
+    initCanvas(desktopCanvasRef.current);
+    initCanvas(mobileCanvasRef.current);
   }, []);
 
   // 检测 URL 中的分享参数并加载数据
@@ -2003,7 +2021,7 @@ export default function Home() {
           />
 
           <div className="relative mb-5 h-[240px] overflow-hidden rounded-xl border-2 border-[#333] bg-black">
-            <canvas ref={canvasRef} className="block h-full w-full" />
+            <canvas ref={desktopCanvasRef} className="block h-full w-full" />
             <div className="absolute right-[15px] top-[15px] text-right pointer-events-none">
               <div className="text-[32px] font-black text-[#30d158] transition-colors" id="realtimeScore">
                 {realtimeScore}
@@ -2053,54 +2071,52 @@ export default function Home() {
       <div className="md:hidden fixed inset-0 flex flex-col bg-[#121214]">
         {/* 移动端内容区 */}
         <div className="flex-1 overflow-y-auto pb-[70px]">
-          {/* 主控台视图 */}
-          {mobileTab === 'main' && (
-            <div className="p-3">
-              <div className="rounded-2xl bg-[#1e1e20] p-4 border border-[#333]">
-                <h2 className="mb-3 flex items-center justify-between text-sm font-bold">
-                  <span>🎹 智能声乐评测 <span style={{ fontSize: '10px', background: '#333', padding: '2px 4px', borderRadius: '4px', color: '#aaa' }}>V9.0</span></span>
-                  <span className="text-[#0a84ff] text-xs">
-                    {refBuffer ? `第 ${students.length + 1} 位` : '等待文件'}
-                  </span>
-                </h2>
+          {/* 主控台视图 - 始终挂载，使用 CSS 控制显示 */}
+          <div className={`p-3 ${mobileTab === 'main' ? '' : 'hidden'}`}>
+            <div className="rounded-2xl bg-[#1e1e20] p-4 border border-[#333]">
+              <h2 className="mb-3 flex items-center justify-between text-sm font-bold">
+                <span>🎹 智能声乐评测 <span style={{ fontSize: '10px', background: '#333', padding: '2px 4px', borderRadius: '4px', color: '#aaa' }}>V9.0</span></span>
+                <span className="text-[#0a84ff] text-xs">
+                  {refBuffer ? `第 ${students.length + 1} 位` : '等待文件'}
+                </span>
+              </h2>
 
-                <div className="mb-3 grid grid-cols-3 gap-2">
-                  <div onClick={() => fileRefRef.current?.click()} className={`track-slot ${refBuffer ? 'loaded' : ''}`}>
-                    <span className="icon-status text-base">{refBuffer ? '✅' : '🗣️'}</span>
-                    <span className="slot-label text-[11px]">{refBuffer ? '干声' : '1.干声'}</span>
-                    <span className="slot-desc text-[9px]">必选</span>
-                  </div>
-                  <div onClick={() => fileAccRef.current?.click()} className={`track-slot ${accBuffer ? 'loaded' : ''}`}>
-                    <span className="icon-status text-base">{accBuffer ? '✅' : '🎼'}</span>
-                    <span className="slot-label text-[11px]">{accBuffer ? '伴奏' : '2.伴奏'}</span>
-                    <span className="slot-desc text-[9px]">可选</span>
-                  </div>
-                  <div onClick={() => fileScoreRef.current?.click()} className={`track-slot ${scoreImage ? 'loaded' : ''}`}>
-                    <span className="icon-status text-base">{scoreImage ? '✅' : '📄'}</span>
-                    <span className="slot-label text-[11px]">{scoreImage ? '乐谱' : '3.乐谱'}</span>
-                    <span className="slot-desc text-[9px]">可选</span>
-                  </div>
+              <div className="mb-3 grid grid-cols-3 gap-2">
+                <div onClick={() => fileRefRef.current?.click()} className={`track-slot ${refBuffer ? 'loaded' : ''}`}>
+                  <span className="icon-status text-base">{refBuffer ? '✅' : '🗣️'}</span>
+                  <span className="slot-label text-[11px]">{refBuffer ? '干声' : '1.干声'}</span>
+                  <span className="slot-desc text-[9px]">必选</span>
                 </div>
-
-                <div className="relative h-[160px] mb-3 rounded-xl border-2 border-[#333] bg-black">
-                  <canvas ref={canvasRef} className="block h-full w-full" />
-                  <div className="absolute right-2 top-2 text-right">
-                    <div className="text-[22px] font-black text-[#30d158]">{realtimeScore}</div>
-                    <div className="text-[10px] text-[#aaa]">{realtimeStatus}</div>
-                  </div>
+                <div onClick={() => fileAccRef.current?.click()} className={`track-slot ${accBuffer ? 'loaded' : ''}`}>
+                  <span className="icon-status text-base">{accBuffer ? '✅' : '🎼'}</span>
+                  <span className="slot-label text-[11px]">{accBuffer ? '伴奏' : '2.伴奏'}</span>
+                  <span className="slot-desc text-[9px]">可选</span>
                 </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <button onClick={startSession} disabled={!refBuffer || students.length >= 4} className="btn btn-start py-3 text-sm">
-                    🎙️ 第 {students.length + 1} 位
-                  </button>
-                  <button onClick={stopSession} disabled={!appDataRef.current.isPlaying} className="btn btn-stop py-3 text-sm">
-                    ⏹ 结束
-                  </button>
+                <div onClick={() => fileScoreRef.current?.click()} className={`track-slot ${scoreImage ? 'loaded' : ''}`}>
+                  <span className="icon-status text-base">{scoreImage ? '✅' : '📄'}</span>
+                  <span className="slot-label text-[11px]">{scoreImage ? '乐谱' : '3.乐谱'}</span>
+                  <span className="slot-desc text-[9px]">可选</span>
                 </div>
               </div>
+
+              <div className="relative h-[160px] mb-3 rounded-xl border-2 border-[#333] bg-black">
+                <canvas ref={mobileCanvasRef} className="block h-full w-full" />
+                <div className="absolute right-2 top-2 text-right">
+                  <div className="text-[22px] font-black text-[#30d158]">{realtimeScore}</div>
+                  <div className="text-[10px] text-[#aaa]">{realtimeStatus}</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={startSession} disabled={!refBuffer || students.length >= 4} className="btn btn-start py-3 text-sm">
+                  🎙️ 第 {students.length + 1} 位
+                </button>
+                <button onClick={stopSession} disabled={!appDataRef.current.isPlaying} className="btn btn-stop py-3 text-sm">
+                  ⏹ 结束
+                </button>
+              </div>
             </div>
-          )}
+          </div>
 
           {/* 课堂记录视图 */}
           {mobileTab === 'records' && (
