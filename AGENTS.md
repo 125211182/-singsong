@@ -7,20 +7,10 @@
 - **Framework**: Next.js 16 (App Router)
 - **Core**: React 19
 - **Language**: TypeScript 5
-- **UI**: Tailwind CSS 4 + shadcn/ui + Lucide Icons
-- **Animation**: Framer Motion
+- **UI**: Tailwind CSS 4 + shadcn/ui
 - **Audio**: Web Audio API
 - **Storage**: Supabase (数据库), S3Storage (对象存储)
 - **Package Manager**: pnpm
-
-## UI 设计风格
-- **风格**: 童趣风（圆润、明亮、友好）
-- **主色**: #5DB7FF (蓝色)
-- **辅色**: #FF8FB3 (粉色), #FFD447 (黄色), #77D982 (绿色)
-- **背景**: #FFF7D6 (暖黄)
-- **字体**: Nunito (圆润无衬线)
-- **圆角**: 1rem - 1.5rem
-- **阴影**: 柔和阴影 (shadow-card, shadow-float)
 
 ## 关键设计决策
 
@@ -42,12 +32,6 @@
 ### 分享功能
 - 文件 URL 有效期: 90 天
 - 分享链接: 永久有效
-
-### UI 升级 (v9.1)
-- 图标系统: emoji → Lucide SVG 图标
-- 颜色系统: 使用 CSS 变量 (var(--primary), var(--success) 等)
-- 动画效果: 学生卡片入场动画 (slideInLeft)
-- 可访问性: 添加 aria-label 到按钮
 
 ## 构建和测试命令
 ```bash

@@ -1,26 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import {
-  Music,
-  FileText,
-  Image,
-  Mic,
-  BarChart3,
-  ClipboardList,
-  TrendingUp,
-  TrendingDown,
-  Star,
-  Sparkles,
-  Trophy,
-  Check,
-  Piano,
-  BookOpen,
-  Square,
-  Share2,
-  RotateCcw
-} from 'lucide-react';
-import MelodyPortrait from '@/components/MelodyPortrait';
 
 // ================= 配置 (V8.3 暖心版参数) =================
 const CONFIG = {
@@ -69,10 +49,6 @@ interface StudentScoreData {
   comments: ScoreComments;
   phraseScores: PhraseScore[];
   audioUrl?: string; // 录音文件URL（分享后才有）
-  // 演唱画像数据
-  melodyData?: { time: number; midi: number }[];
-  sampleData?: SampleData[];
-  totalDuration?: number;
 }
 
 // 采样点数据（用于乐句分析）
@@ -82,7 +58,6 @@ interface SampleData {
   hasPitch: boolean;
   isHit: boolean;
   pitchDiff?: number;
-  midi?: number; // 实际检测到的 MIDI 音高（用于演唱画像）
 }
 
 interface AppData {
@@ -111,7 +86,6 @@ interface AppData {
 export default function Home() {
   // Refs (用于可变数据，避免闭包问题)
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const mobileCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileRefRef = useRef<HTMLInputElement>(null);
   const fileAccRef = useRef<HTMLInputElement>(null);
   const fileScoreRef = useRef<HTMLInputElement>(null);
@@ -138,7 +112,7 @@ export default function Home() {
   });
 
   // State (用于触发重新渲染)
-  const [realtimeScore, setRealtimeScore] = useState<string | React.ReactNode>('--');
+  const [realtimeScore, setRealtimeScore] = useState('--');
   const [realtimeStatus, setRealtimeStatus] = useState('Ready');
   const [loading, setLoading] = useState(false);
   const [loadingText, setLoadingText] = useState('Processing...');
@@ -386,9 +360,7 @@ export default function Home() {
     // 实时模式：正在播放时才继续
     if (!preview && !data.isPlaying) return;
 
-    // 根据当前视图选择正确的 canvas（桌面端 vs 移动端）
-    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-    const canvas = isMobile ? mobileCanvasRef.current : canvasRef.current;
+    const canvas = canvasRef.current;
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
@@ -478,10 +450,10 @@ export default function Home() {
             if (normDiff < CONFIG.tolerance) {
               isHit = true;
               data.stats.hits = data.stats.hits + 1;
-              setRealtimeScore(<Sparkles className="w-4 h-4 inline" />);
+              setRealtimeScore('✨');
               if (normDiff < 1.0) displayMidi = currentNote.midi;
             } else {
-              setRealtimeScore(diff > 0 ? <TrendingDown className="w-4 h-4 inline text-error" /> : <TrendingUp className="w-4 h-4 inline text-success" />);
+              setRealtimeScore(diff > 0 ? '📉' : '📈');
             }
           }
 
@@ -497,8 +469,7 @@ export default function Home() {
             volume: rms,
             hasPitch: true,
             isHit: isHit,
-            pitchDiff: pitchDiff,
-            midi: displayMidi
+            pitchDiff: pitchDiff
           });
         } else {
           setRealtimeScore('...');
@@ -663,32 +634,33 @@ export default function Home() {
     const scoreRhythm = Math.min(100, completionScore + rhythmStability + noteAccuracy + articulation);
 
     // ========== 情绪评分（20%）- 专业版 ==========
-    // 即使没有音量数据，也使用默认值继续生成评分
-    const volData = studentVol.length > 0 ? studentVol : [0.02];
-    
+    if (studentVol.length === 0) {
+      return;
+    }
+
     // 计算各项指标
-    const volMean = volData.reduce((a, b) => a + b, 0) / volData.length;
-    const volMin = Math.min(...volData);
-    const volMax = Math.max(...volData);
+    const volMean = studentVol.reduce((a, b) => a + b, 0) / studentVol.length;
+    const volMin = Math.min(...studentVol);
+    const volMax = Math.max(...studentVol);
     const dynamicRange = volMax - volMin;
-    const volStd = Math.sqrt(volData.reduce((a, b) => a + Math.pow(b - volMean, 2), 0) / volData.length);
+    const volStd = Math.sqrt(studentVol.reduce((a, b) => a + Math.pow(b - volMean, 2), 0) / studentVol.length);
 
     // 连贯性分析：声音是否流畅，是否有断音
     let smoothnessScore = 0;
     let pauseCount = 0;
-    for (let i = 1; i < volData.length; i++) {
-      if (volData[i] < 0.01 && volData[i - 1] >= 0.01) {
+    for (let i = 1; i < studentVol.length; i++) {
+      if (studentVol[i] < 0.01 && studentVol[i - 1] >= 0.01) {
         pauseCount++;
       }
     }
-    const pauseRatio = pauseCount / (volData.length / 50); // 每秒的停顿次数
+    const pauseRatio = pauseCount / (studentVol.length / 50); // 每秒的停顿次数
 
     // 气息控制分析：音量持续能力和稳定性
     let breathControl = 0;
     let sustainSegments = 0;
     let currentSegment = 0;
-    for (let i = 0; i < volData.length; i++) {
-      if (volData[i] > 0.02) {
+    for (let i = 0; i < studentVol.length; i++) {
+      if (studentVol[i] > 0.02) {
         currentSegment++;
         if (currentSegment > 10) { // 持续超过10帧视为有效气息
           sustainSegments++;
@@ -697,7 +669,7 @@ export default function Home() {
         currentSegment = 0;
       }
     }
-    const sustainRatio = sustainSegments / (volData.length / 20);
+    const sustainRatio = sustainSegments / (studentVol.length / 20);
 
     // 基础分
     let scoreEmotion = 50;
@@ -1219,25 +1191,25 @@ export default function Home() {
     const data = appDataRef.current;
     const name = `同学 ${String.fromCharCode(65 + data.students.length)}`;
     let rank = 'C';
-    let color = 'var(--error)';
+    let color = '#ff453a';
 
     // 调整等级标准，更加鼓励
-    if (total >= 95) { rank = 'S+'; color = 'var(--warning)'; } // 金色
-    else if (total >= 90) { rank = 'S'; color = 'var(--warning)'; }
-    else if (total >= 85) { rank = 'A+'; color = 'var(--success)'; }
-    else if (total >= 80) { rank = 'A'; color = 'var(--success)'; }
-    else if (total >= 75) { rank = 'B+'; color = 'var(--primary)'; }
-    else if (total >= 70) { rank = 'B'; color = 'var(--primary)'; }
-    else if (total >= 65) { rank = 'B-'; color = 'var(--primary)'; } // 改为B-，更鼓励
-    else if (total >= 60) { rank = 'C'; color = 'var(--error)'; }
-    else if (total >= 55) { rank = 'C-'; color = 'var(--error)'; }
-    else { rank = 'D'; color = 'var(--error)'; }
+    if (total >= 95) { rank = 'S+'; color = '#ffd60a'; } // 金色
+    else if (total >= 90) { rank = 'S'; color = '#ffd60a'; }
+    else if (total >= 85) { rank = 'A+'; color = '#30d158'; }
+    else if (total >= 80) { rank = 'A'; color = '#30d158'; }
+    else if (total >= 75) { rank = 'B+'; color = '#0a84ff'; }
+    else if (total >= 70) { rank = 'B'; color = '#0a84ff'; }
+    else if (total >= 65) { rank = 'B-'; color = '#0a84ff'; } // 改为B-，更鼓励
+    else if (total >= 60) { rank = 'C'; color = '#ff453a'; }
+    else if (total >= 55) { rank = 'C-'; color = '#ff453a'; }
+    else { rank = 'D'; color = '#ff6b6b'; }
 
     // 生成歌曲得分明细的UI
     const phraseDetails = phraseScores.length > 0 ? (
       <div className="phrase-details mt-3">
         <div className="phrase-details-header">
-          <span><BarChart3 className="w-4 h-4 inline mr-1" /> 歌曲得分明细</span>
+          <span>📊 歌曲得分明细</span>
           <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: 'normal' }}>
             共 {phraseScores.length} 个片段
           </span>
@@ -1251,13 +1223,13 @@ export default function Home() {
               <div className="phrase-info">
                 <div className="phrase-scores">
                   <div className="phrase-score-item">
-                    <span className="phrase-label"><Music className="w-3 h-3 inline mr-1" /> 音准</span>
+                    <span className="phrase-label">🎵 音准</span>
                     <span className={phrase.pitch >= 90 ? 'phrase-score-high' : phrase.pitch >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
                       {Math.round(phrase.pitch)}
                     </span>
                   </div>
                   <div className="phrase-score-item">
-                    <span className="phrase-label"><BarChart3 className="w-3 h-3 inline mr-1" /> 节奏</span>
+                    <span className="phrase-label">🥁 节奏</span>
                     <span className={phrase.rhythm >= 90 ? 'phrase-score-high' : phrase.rhythm >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
                       {Math.round(phrase.rhythm)}
                     </span>
@@ -1285,23 +1257,23 @@ export default function Home() {
         <div className="dim-bars">
           <div className="dim-row">
             <span className="dim-label">音准</span>
-            <div className="dim-track"><div className="dim-fill" style={{ width: `${p}%`, background: 'var(--success)' }}></div></div>
+            <div className="dim-track"><div className="dim-fill" style={{ width: `${p}%`, background: '#30d158' }}></div></div>
             <span className="dim-score">{p}</span>
           </div>
           <div className="dim-row">
             <span className="dim-label">节奏</span>
-            <div className="dim-track"><div className="dim-fill" style={{ width: `${r}%`, background: 'var(--primary)' }}></div></div>
+            <div className="dim-track"><div className="dim-fill" style={{ width: `${r}%`, background: '#0a84ff' }}></div></div>
             <span className="dim-score">{r}</span>
           </div>
           <div className="dim-row">
             <span className="dim-label">情绪</span>
-            <div className="dim-track"><div className="dim-fill" style={{ width: `${e}%`, background: 'var(--warning)' }}></div></div>
+            <div className="dim-track"><div className="dim-fill" style={{ width: `${e}%`, background: '#ffd60a' }}></div></div>
             <span className="dim-score">{e}</span>
           </div>
         </div>
         <div className="pro-comment">
-          <div className="comment-item"><span className="c-label"><Music className="w-3 h-3 inline mr-1" /> 音准:</span><span>{comments.pitch}</span></div>
-          <div className="comment-item"><span className="c-label"><BarChart3 className="w-3 h-3 inline mr-1" /> 节奏:</span><span>{comments.rhythm}</span></div>
+          <div className="comment-item"><span className="c-label">🎵 音准:</span><span>{comments.pitch}</span></div>
+          <div className="comment-item"><span className="c-label">🥁 节奏:</span><span>{comments.rhythm}</span></div>
           <div className="comment-item"><span className="c-label">❤️ 情绪:</span><span>{comments.emotion}</span></div>
         </div>
         {phraseDetails}
@@ -1311,7 +1283,7 @@ export default function Home() {
 
     setStudentCards(prev => [card, ...prev]);
     
-    // 保存评分数据用于分享（包含演唱画像数据）
+    // 保存评分数据用于分享
     const scoreData: StudentScoreData = {
       name,
       total,
@@ -1321,11 +1293,7 @@ export default function Home() {
       rank,
       rankColor: color,
       comments,
-      phraseScores,
-      // 演唱画像数据
-      melodyData: data.melodyData.map(p => ({ time: p.time, midi: p.midi })),
-      sampleData: [...data.stats.sampleData],
-      totalDuration: data.melodyData.length > 0 ? data.melodyData[data.melodyData.length - 1].time : 0
+      phraseScores
     };
     setStudentScoreData(prev => [scoreData, ...prev]);
     
@@ -1566,7 +1534,7 @@ export default function Home() {
             const phraseDetails = score.phraseScores && score.phraseScores.length > 0 ? (
               <div className="phrase-details mt-3">
                 <div className="phrase-details-header">
-                  <span><BarChart3 className="w-4 h-4 inline mr-1" /> 歌曲得分明细</span>
+                  <span>📊 歌曲得分明细</span>
                   <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: 'normal' }}>
                     共 {score.phraseScores.length} 个片段
                   </span>
@@ -1580,13 +1548,13 @@ export default function Home() {
                       <div className="phrase-info">
                         <div className="phrase-scores">
                           <div className="phrase-score-item">
-                            <span className="phrase-label"><Music className="w-3 h-3 inline mr-1" /> 音准</span>
+                            <span className="phrase-label">🎵 音准</span>
                             <span className={phrase.pitch >= 90 ? 'phrase-score-high' : phrase.pitch >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
                               {Math.round(phrase.pitch)}
                             </span>
                           </div>
                           <div className="phrase-score-item">
-                            <span className="phrase-label"><BarChart3 className="w-3 h-3 inline mr-1" /> 节奏</span>
+                            <span className="phrase-label">🥁 节奏</span>
                             <span className={phrase.rhythm >= 90 ? 'phrase-score-high' : phrase.rhythm >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
                               {Math.round(phrase.rhythm)}
                             </span>
@@ -1614,23 +1582,23 @@ export default function Home() {
                 <div className="dim-bars">
                   <div className="dim-row">
                     <span className="dim-label">音准</span>
-                    <div className="dim-track"><div className="dim-fill" style={{ width: `${score.pitch}%`, background: 'var(--success)' }}></div></div>
+                    <div className="dim-track"><div className="dim-fill" style={{ width: `${score.pitch}%`, background: '#30d158' }}></div></div>
                     <span className="dim-score">{score.pitch}</span>
                   </div>
                   <div className="dim-row">
                     <span className="dim-label">节奏</span>
-                    <div className="dim-track"><div className="dim-fill" style={{ width: `${score.rhythm}%`, background: 'var(--primary)' }}></div></div>
+                    <div className="dim-track"><div className="dim-fill" style={{ width: `${score.rhythm}%`, background: '#0a84ff' }}></div></div>
                     <span className="dim-score">{score.rhythm}</span>
                   </div>
                   <div className="dim-row">
                     <span className="dim-label">情绪</span>
-                    <div className="dim-track"><div className="dim-fill" style={{ width: `${score.emotion}%`, background: 'var(--warning)' }}></div></div>
+                    <div className="dim-track"><div className="dim-fill" style={{ width: `${score.emotion}%`, background: '#ffd60a' }}></div></div>
                     <span className="dim-score">{score.emotion}</span>
                   </div>
                 </div>
                 <div className="pro-comment">
-                  <div className="comment-item"><span className="c-label"><Music className="w-3 h-3 inline mr-1" /> 音准:</span><span>{score.comments.pitch}</span></div>
-                  <div className="comment-item"><span className="c-label"><BarChart3 className="w-3 h-3 inline mr-1" /> 节奏:</span><span>{score.comments.rhythm}</span></div>
+                  <div className="comment-item"><span className="c-label">🎵 音准:</span><span>{score.comments.pitch}</span></div>
+                  <div className="comment-item"><span className="c-label">🥁 节奏:</span><span>{score.comments.rhythm}</span></div>
                   <div className="comment-item"><span className="c-label">❤️ 情绪:</span><span>{score.comments.emotion}</span></div>
                 </div>
                 {phraseDetails}
@@ -1902,11 +1870,6 @@ export default function Home() {
       canvas.width = canvas.offsetWidth;
       canvas.height = canvas.offsetHeight;
     }
-    const mobileCanvas = mobileCanvasRef.current;
-    if (mobileCanvas) {
-      mobileCanvas.width = mobileCanvas.offsetWidth;
-      mobileCanvas.height = mobileCanvas.offsetHeight;
-    }
   }, []);
 
   // 检测 URL 中的分享参数并加载数据
@@ -1941,7 +1904,7 @@ export default function Home() {
       {/* Loading Overlay */}
       {loading && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/85 backdrop-blur-sm">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-outline border-t-primary"></div>
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#333] border-t-[#0a84ff]"></div>
           <div className="mt-5 text-base font-bold text-white">{loadingText}</div>
         </div>
       )}
@@ -1951,7 +1914,7 @@ export default function Home() {
         <div className="border-b border-[#333] bg-[#1c1c1f] px-5 py-5">
           <div className="flex items-center justify-between text-base font-bold text-white">
             <span>课堂记录</span>
-            <span className="text-primary">{students.length} / 4</span>
+            <span className="text-[#0a84ff]">{students.length} / 4</span>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto px-[15px] py-[15px]">
@@ -1960,27 +1923,14 @@ export default function Home() {
               暂无记录<br />请在中间区域开始
             </div>
           ) : (
-            studentScoreData.map((score, idx) => (
-              <div key={idx}>
-                {studentCards[studentCards.length - 1 - idx]}
-                {/* 演唱画像 */}
-                {score.melodyData && score.sampleData && score.totalDuration && (
-                  <MelodyPortrait
-                    melodyData={score.melodyData}
-                    sampleData={score.sampleData}
-                    totalDuration={score.totalDuration}
-                    studentName={score.name}
-                  />
-                )}
-              </div>
-            ))
+            studentCards
           )}
         </div>
         <div className="border-t border-[#333] px-[15px] py-[15px] flex flex-col gap-2">
           <button
             onClick={handleShare}
             disabled={students.length === 0}
-            className="w-full rounded-lg border-none bg-primary py-3 text-[14px] text-white cursor-pointer hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full rounded-lg border-none bg-[#0a84ff] py-3 text-[14px] text-white cursor-pointer hover:bg-[#0070e0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             分享课堂
           </button>
@@ -1997,8 +1947,8 @@ export default function Home() {
       <div className="flex flex-1 flex-col items-center overflow-y-auto p-5 border-r border-[#333] md:p-3">
         <div className="w-full max-w-[1200px] rounded-2xl bg-[#1e1e20] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.4)] border border-[#333]">
           <h2 className="mb-5 flex items-center justify-between text-lg">
-            <span><Music className="w-5 h-5 inline mr-2" /> 智能声乐评测 <span style={{ fontSize: '12px', background: 'var(--surface-container)', padding: '2px 6px', borderRadius: '4px', color: 'var(--on-surface-variant)' }}>V9.0</span></span>
-            <span className="text-base font-bold text-primary">
+            <span>🎹 智能声乐评测 <span style={{ fontSize: '12px', background: '#333', padding: '2px 6px', borderRadius: '4px', color: '#aaa' }}>V9.0</span></span>
+            <span className="text-base font-bold text-[#0a84ff]">
               {refBuffer ? `当前: 第 ${students.length + 1} 位同学` : '等待文件'}
             </span>
           </h2>
@@ -2016,7 +1966,7 @@ export default function Home() {
               onClick={() => fileAccRef.current?.click()}
               className={`track-slot ${accBuffer ? 'loaded' : ''}`}
             >
-              <span className="icon-status">{accBuffer ? <Check className="w-5 h-5 inline text-success" /> : <Music className="w-5 h-5 inline" />}</span>
+              <span className="icon-status">{accBuffer ? '✅' : '🎼'}</span>
               <span className="slot-label">{accBuffer ? '伴奏已就绪' : '2. 伴奏(可选)'}</span>
               <span className="slot-desc">背景播放</span>
             </div>
@@ -2024,7 +1974,7 @@ export default function Home() {
               onClick={() => fileScoreRef.current?.click()}
               className={`track-slot ${scoreImage ? 'loaded' : ''}`}
             >
-              <span className="icon-status">{scoreImage ? <Check className="w-5 h-5 inline text-success" /> : <Image className="w-5 h-5 inline" />}</span>
+              <span className="icon-status">{scoreImage ? '✅' : '📄'}</span>
               <span className="slot-label">{scoreImage ? '乐谱已加载' : '3. 乐谱(可选)'}</span>
               <span className="slot-desc">右侧显示</span>
             </div>
@@ -2055,7 +2005,7 @@ export default function Home() {
           <div className="relative mb-5 h-[240px] overflow-hidden rounded-xl border-2 border-[#333] bg-black">
             <canvas ref={canvasRef} className="block h-full w-full" />
             <div className="absolute right-[15px] top-[15px] text-right pointer-events-none">
-              <div className="text-[32px] font-black text-success transition-colors" id="realtimeScore">
+              <div className="text-[32px] font-black text-[#30d158] transition-colors" id="realtimeScore">
                 {realtimeScore}
               </div>
               <div className="mt-[5px] text-[14px] text-[#aaa]">{realtimeStatus}</div>
@@ -2084,7 +2034,7 @@ export default function Home() {
       {/* 桌面端右侧：乐谱视窗 */}
       <div className="hidden md:flex h-full w-[600px] shrink-0 flex-col bg-[#151517]">
         <div className="border-b border-[#333] bg-[#1c1c1f] px-8 py-[15px] flex items-center justify-between">
-          <span className="font-bold text-lg"><Music className="w-5 h-5 inline mr-2" /> 乐谱视窗</span>
+          <span className="font-bold text-lg">🎼 乐谱视窗</span>
           <span className="text-[12px] text-[#666]">支持滚动查看</span>
         </div>
         <div className="flex-1 overflow-y-auto p-[25px]" style={{ backgroundImage: 'radial-gradient(#222 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
@@ -2108,8 +2058,8 @@ export default function Home() {
             <div className="p-3">
               <div className="rounded-2xl bg-[#1e1e20] p-4 border border-[#333]">
                 <h2 className="mb-3 flex items-center justify-between text-sm font-bold">
-                  <span><Music className="w-4 h-4 inline mr-1" /> 智能声乐评测 <span style={{ fontSize: '10px', background: 'var(--surface-container)', padding: '2px 4px', borderRadius: '4px', color: 'var(--on-surface-variant)' }}>V9.0</span></span>
-                  <span className="text-primary text-xs">
+                  <span>🎹 智能声乐评测 <span style={{ fontSize: '10px', background: '#333', padding: '2px 4px', borderRadius: '4px', color: '#aaa' }}>V9.0</span></span>
+                  <span className="text-[#0a84ff] text-xs">
                     {refBuffer ? `第 ${students.length + 1} 位` : '等待文件'}
                   </span>
                 </h2>
@@ -2121,31 +2071,31 @@ export default function Home() {
                     <span className="slot-desc text-[9px]">必选</span>
                   </div>
                   <div onClick={() => fileAccRef.current?.click()} className={`track-slot ${accBuffer ? 'loaded' : ''}`}>
-                    <span className="icon-status text-base">{accBuffer ? <Check className="w-4 h-4 inline text-success" /> : <Music className="w-4 h-4 inline" />}</span>
+                    <span className="icon-status text-base">{accBuffer ? '✅' : '🎼'}</span>
                     <span className="slot-label text-[11px]">{accBuffer ? '伴奏' : '2.伴奏'}</span>
                     <span className="slot-desc text-[9px]">可选</span>
                   </div>
                   <div onClick={() => fileScoreRef.current?.click()} className={`track-slot ${scoreImage ? 'loaded' : ''}`}>
-                    <span className="icon-status text-base">{scoreImage ? <Check className="w-4 h-4 inline text-success" /> : <Image className="w-4 h-4 inline" />}</span>
+                    <span className="icon-status text-base">{scoreImage ? '✅' : '📄'}</span>
                     <span className="slot-label text-[11px]">{scoreImage ? '乐谱' : '3.乐谱'}</span>
                     <span className="slot-desc text-[9px]">可选</span>
                   </div>
                 </div>
 
                 <div className="relative h-[160px] mb-3 rounded-xl border-2 border-[#333] bg-black">
-                  <canvas ref={mobileCanvasRef} className="block h-full w-full" />
+                  <canvas ref={canvasRef} className="block h-full w-full" />
                   <div className="absolute right-2 top-2 text-right">
-                    <div className="text-[22px] font-black text-success">{realtimeScore}</div>
+                    <div className="text-[22px] font-black text-[#30d158]">{realtimeScore}</div>
                     <div className="text-[10px] text-[#aaa]">{realtimeStatus}</div>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
-                  <button onClick={startSession} disabled={!refBuffer || students.length >= 4} className="btn btn-start py-3 text-sm" aria-label={`开始第 ${students.length + 1} 位学生演唱`}>
-                    <Mic className="w-4 h-4 inline mr-1" /> 第 {students.length + 1} 位
+                  <button onClick={startSession} disabled={!refBuffer || students.length >= 4} className="btn btn-start py-3 text-sm">
+                    🎙️ 第 {students.length + 1} 位
                   </button>
-                  <button onClick={stopSession} disabled={!appDataRef.current.isPlaying} className="btn btn-stop py-3 text-sm" aria-label="结束演唱">
-                    <Square className="w-4 h-4 inline mr-1" /> 结束
+                  <button onClick={stopSession} disabled={!appDataRef.current.isPlaying} className="btn btn-stop py-3 text-sm">
+                    ⏹ 结束
                   </button>
                 </div>
               </div>
@@ -2157,8 +2107,8 @@ export default function Home() {
             <div className="p-3">
               <div className="rounded-2xl bg-[#1e1e20] p-4 border border-[#333]">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="font-bold text-sm"><ClipboardList className="w-4 h-4 inline mr-1" /> 课堂记录</span>
-                  <span className="text-primary text-xs">{students.length} / 4</span>
+                  <span className="font-bold text-sm">📋 课堂记录</span>
+                  <span className="text-[#0a84ff] text-xs">{students.length} / 4</span>
                 </div>
                 <div className="space-y-3">
                   {studentCards.length === 0 ? (
@@ -2166,28 +2116,15 @@ export default function Home() {
                       暂无记录
                     </div>
                   ) : (
-                    studentScoreData.map((score, idx) => (
-                      <div key={idx}>
-                        {studentCards[studentCards.length - 1 - idx]}
-                        {/* 演唱画像 */}
-                        {score.melodyData && score.sampleData && score.totalDuration && (
-                          <MelodyPortrait
-                            melodyData={score.melodyData}
-                            sampleData={score.sampleData}
-                            totalDuration={score.totalDuration}
-                            studentName={score.name}
-                          />
-                        )}
-                      </div>
-                    ))
+                    studentCards
                   )}
                 </div>
                 <div className="mt-4 flex flex-col gap-2">
-                  <button onClick={handleShare} disabled={students.length === 0} className="w-full bg-primary text-white py-3 rounded-lg text-sm disabled:opacity-50" aria-label="分享课堂数据">
-                    <Share2 className="w-4 h-4 inline mr-1" /> 分享课堂
+                  <button onClick={handleShare} disabled={students.length === 0} className="w-full bg-[#0a84ff] text-white py-3 rounded-lg text-sm disabled:opacity-50">
+                    分享课堂
                   </button>
-                  <button onClick={resetClassroom} className="w-full bg-[#333] text-[#aaa] py-3 rounded-lg text-sm" aria-label="重置课堂数据">
-                    <RotateCcw className="w-4 h-4 inline mr-1" /> 重置课堂
+                  <button onClick={resetClassroom} className="w-full bg-[#333] text-[#aaa] py-3 rounded-lg text-sm">
+                    重置课堂
                   </button>
                 </div>
               </div>
@@ -2199,7 +2136,7 @@ export default function Home() {
             <div className="p-3 h-full">
               <div className="rounded-2xl bg-[#1e1e20] p-4 border border-[#333] h-full">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="font-bold text-sm"><Music className="w-4 h-4 inline mr-1" /> 乐谱视窗</span>
+                  <span className="font-bold text-sm">🎼 乐谱视窗</span>
                 </div>
                 <div className="overflow-y-auto rounded-lg" style={{ backgroundImage: 'radial-gradient(#222 1px, transparent 1px)', backgroundSize: '16px 16px', maxHeight: 'calc(100vh - 180px)' }}>
                   {scoreImage ? (
@@ -2220,23 +2157,23 @@ export default function Home() {
         <div className="fixed bottom-0 left-0 right-0 bg-[#1c1c1f] border-t border-[#333] flex">
           <button
             onClick={() => setMobileTab('main')}
-            className={`flex-1 py-3 text-center text-xs ${mobileTab === 'main' ? 'text-primary border-t-2 border-primary' : 'text-on-surface-variant'}`}
+            className={`flex-1 py-3 text-center text-xs ${mobileTab === 'main' ? 'text-[#0a84ff] border-t-2 border-[#0a84ff]' : 'text-[#666]'}`}
           >
-            <div className="text-base mb-0.5"><Piano className="w-4 h-4 mx-auto" /></div>
+            <div className="text-base mb-0.5">🎹</div>
             主控台
           </button>
           <button
             onClick={() => setMobileTab('records')}
-            className={`flex-1 py-3 text-center text-xs ${mobileTab === 'records' ? 'text-primary border-t-2 border-primary' : 'text-on-surface-variant'}`}
+            className={`flex-1 py-3 text-center text-xs ${mobileTab === 'records' ? 'text-[#0a84ff] border-t-2 border-[#0a84ff]' : 'text-[#666]'}`}
           >
-            <div className="text-base mb-0.5"><ClipboardList className="w-4 h-4 mx-auto" /></div>
+            <div className="text-base mb-0.5">📋</div>
             课堂记录
           </button>
           <button
             onClick={() => setMobileTab('score')}
-            className={`flex-1 py-3 text-center text-xs ${mobileTab === 'score' ? 'text-primary border-t-2 border-primary' : 'text-on-surface-variant'}`}
+            className={`flex-1 py-3 text-center text-xs ${mobileTab === 'score' ? 'text-[#0a84ff] border-t-2 border-[#0a84ff]' : 'text-[#666]'}`}
           >
-            <div className="text-base mb-0.5"><BookOpen className="w-4 h-4 mx-auto" /></div>
+            <div className="text-base mb-0.5">🎼</div>
             乐谱视窗
           </button>
         </div>
