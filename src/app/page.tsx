@@ -1926,7 +1926,7 @@ export default function Home() {
   }, [mobileTab]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#121214] text-[#e0e0e0]">
+    <div className="flex flex-col h-screen overflow-hidden bg-[#121214] text-[#e0e0e0]">
       {/* Loading Overlay */}
       {loading && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/85 backdrop-blur-sm">
@@ -1935,6 +1935,8 @@ export default function Home() {
         </div>
       )}
 
+      {/* 上半部分：桌面端三栏布局 */}
+      <div className="flex flex-1 min-h-0">
       {/* 桌面端左侧：课堂记录 */}
       <div className="hidden md:flex h-full w-[320px] shrink-0 flex-col border-r border-[#333] bg-[#18181a]">
         <div className="border-b border-[#333] bg-[#1c1c1f] px-5 py-5">
@@ -2054,41 +2056,11 @@ export default function Home() {
               ⏹ 结束评测
             </button>
           </div>
-
-          {/* 演唱画像区域 */}
-          <div className="mt-4 rounded-xl bg-[#1e1e20] border border-[#333] p-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-bold text-white">🎼 演唱画像</span>
-              {studentScoreData.length > 0 && (
-                <select 
-                  value={portraitStudentIndex}
-                  onChange={(e) => setPortraitStudentIndex(Number(e.target.value))}
-                  className="text-xs bg-[#2a2a2d] border border-[#444] rounded px-2 py-1 text-white"
-                >
-                  {studentScoreData.map((s, i) => (
-                    <option key={i} value={i}>{s.name}</option>
-                  ))}
-                </select>
-              )}
-            </div>
-            {studentScoreData.length > 0 ? (
-              <SingingPortrait 
-                sampleData={studentScoreData[portraitStudentIndex]?.sampleData || []}
-                melodyData={appDataRef.current.melodyData}
-                tolerance={CONFIG.tolerance}
-                studentName={studentScoreData[portraitStudentIndex]?.name || ''}
-              />
-            ) : (
-              <div className="h-[120px] flex items-center justify-center text-[#666] text-sm">
-                暂无演唱数据，完成演唱后显示画像
-              </div>
-            )}
-          </div>
         </div>
       </div>
 
-      {/* 桌面端右侧：乐谱视窗 */}
-      <div className="hidden md:flex h-full w-[600px] shrink-0 flex-col bg-[#151517]">
+      {/* 桌面端右侧：乐谱视窗（缩短高度） */}
+      <div className="hidden md:flex h-1/2 w-[600px] shrink-0 flex-col bg-[#151517]">
         <div className="border-b border-[#333] bg-[#1c1c1f] px-8 py-[15px] flex items-center justify-between">
           <span className="font-bold text-lg">🎼 乐谱视窗</span>
           <span className="text-[12px] text-[#666]">支持滚动查看</span>
@@ -2102,6 +2074,44 @@ export default function Home() {
               <span className="text-[12px] text-[#444]">请点击"3. 乐谱"加载图片</span>
             </div>
           )}
+        </div>
+      </div>
+      </div>
+
+      {/* 下半部分：演唱画像（跨越中+右区域） */}
+      <div className="hidden md:flex h-1/2 border-t border-[#333]">
+        {/* 左侧占位，对齐课堂记录宽度 */}
+        <div className="w-[320px] shrink-0"></div>
+        {/* 演唱画像区域 */}
+        <div className="flex-1 flex flex-col bg-[#151517] p-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-bold text-white">🎼 演唱画像</span>
+            {studentScoreData.length > 0 && (
+              <select 
+                value={portraitStudentIndex}
+                onChange={(e) => setPortraitStudentIndex(Number(e.target.value))}
+                className="text-xs bg-[#2a2a2d] border border-[#444] rounded px-2 py-1 text-white"
+              >
+                {studentScoreData.map((s, i) => (
+                  <option key={i} value={i}>{s.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div className="flex-1 rounded-xl bg-[#1e1e20] border border-[#333] p-2 overflow-hidden">
+            {studentScoreData.length > 0 ? (
+              <SingingPortrait 
+                sampleData={studentScoreData[portraitStudentIndex]?.sampleData || []}
+                melodyData={appDataRef.current.melodyData}
+                tolerance={CONFIG.tolerance}
+                studentName={studentScoreData[portraitStudentIndex]?.name || ''}
+              />
+            ) : (
+              <div className="h-full flex items-center justify-center text-[#666] text-sm">
+                暂无演唱数据，完成演唱后显示画像
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
