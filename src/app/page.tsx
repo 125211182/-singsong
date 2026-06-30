@@ -127,6 +127,7 @@ export default function Home() {
   const [updateCounter, setUpdateCounter] = useState(0); // 用于触发 UI 更新
   const [shareLoading, setShareLoading] = useState(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [portraitStudentIndex, setPortraitStudentIndex] = useState(0); // 演唱画像显示的学生索引
 
   // ================= 1. 工具函数 =================
   // 安全解析JSON响应
@@ -1296,12 +1297,6 @@ export default function Home() {
           <div className="comment-item"><span className="c-label">❤️ 情绪:</span><span>{comments.emotion}</span></div>
         </div>
         {phraseDetails}
-        <SingingPortrait 
-          sampleData={sampleData}
-          melodyData={melodyData}
-          tolerance={CONFIG.tolerance}
-          studentName={name}
-        />
         <audio controls src={URL.createObjectURL(blob)} />
       </div>
     );
@@ -2059,6 +2054,36 @@ export default function Home() {
               ⏹ 结束评测
             </button>
           </div>
+
+          {/* 演唱画像区域 */}
+          <div className="mt-4 rounded-xl bg-[#1e1e20] border border-[#333] p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-bold text-white">🎼 演唱画像</span>
+              {studentScoreData.length > 0 && (
+                <select 
+                  value={portraitStudentIndex}
+                  onChange={(e) => setPortraitStudentIndex(Number(e.target.value))}
+                  className="text-xs bg-[#2a2a2d] border border-[#444] rounded px-2 py-1 text-white"
+                >
+                  {studentScoreData.map((s, i) => (
+                    <option key={i} value={i}>{s.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+            {studentScoreData.length > 0 ? (
+              <SingingPortrait 
+                sampleData={studentScoreData[portraitStudentIndex]?.sampleData || []}
+                melodyData={appDataRef.current.melodyData}
+                tolerance={CONFIG.tolerance}
+                studentName={studentScoreData[portraitStudentIndex]?.name || ''}
+              />
+            ) : (
+              <div className="h-[120px] flex items-center justify-center text-[#666] text-sm">
+                暂无演唱数据，完成演唱后显示画像
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -2127,6 +2152,36 @@ export default function Home() {
                 <button onClick={stopSession} disabled={!appDataRef.current.isPlaying} className="btn btn-stop py-3 text-sm">
                   ⏹ 结束
                 </button>
+              </div>
+
+              {/* 移动端演唱画像区域 */}
+              <div className="mt-3 rounded-xl bg-[#1e1e20] border border-[#333] p-2">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-white">🎼 演唱画像</span>
+                  {studentScoreData.length > 0 && (
+                    <select 
+                      value={portraitStudentIndex}
+                      onChange={(e) => setPortraitStudentIndex(Number(e.target.value))}
+                      className="text-xs bg-[#2a2a2d] border border-[#444] rounded px-1 py-0.5 text-white"
+                    >
+                      {studentScoreData.map((s, i) => (
+                        <option key={i} value={i}>{s.name}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                {studentScoreData.length > 0 ? (
+                  <SingingPortrait 
+                    sampleData={studentScoreData[portraitStudentIndex]?.sampleData || []}
+                    melodyData={appDataRef.current.melodyData}
+                    tolerance={CONFIG.tolerance}
+                    studentName={studentScoreData[portraitStudentIndex]?.name || ''}
+                  />
+                ) : (
+                  <div className="h-[80px] flex items-center justify-center text-[#666] text-xs">
+                    暂无演唱数据
+                  </div>
+                )}
               </div>
             </div>
           </div>
