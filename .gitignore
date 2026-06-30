@@ -22,9 +22,9 @@ __pycache__/
 .cache
 coverage
 storybook-static
+*.tsbuildinfo
 
 # Package manager artifacts
-pnpm-lock.yaml
 package-lock.json
 yarn.lock
 .pnp*
