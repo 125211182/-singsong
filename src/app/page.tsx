@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import SingingPortrait from '@/components/SingingPortrait';
 
 // ================= 配置 (V8.3 暖心版参数) =================
 const CONFIG = {
@@ -49,15 +50,17 @@ interface StudentScoreData {
   comments: ScoreComments;
   phraseScores: PhraseScore[];
   audioUrl?: string; // 录音文件URL（分享后才有）
+  sampleData?: SampleData[]; // 采样数据（用于演唱画像）
 }
 
-// 采样点数据（用于乐句分析）
+// 采样点数据（用于乐句分析和演唱画像）
 interface SampleData {
   time: number;
   volume: number;
   hasPitch: boolean;
   isHit: boolean;
   pitchDiff?: number;
+  midi?: number; // 用户的实际 MIDI 值（用于演唱画像）
 }
 
 interface AppData {
@@ -476,13 +479,14 @@ export default function Home() {
           ctx.fillStyle = isHit ? '#30d158' : '#ff453a';
           ctx.fill();
 
-          // 记录采样点数据（用于乐句分析）
+          // 记录采样点数据（用于乐句分析和演唱画像）
           data.stats.sampleData.push({
             time: now,
             volume: rms,
             hasPitch: true,
             isHit: isHit,
-            pitchDiff: pitchDiff
+            pitchDiff: pitchDiff,
+            midi: userMidi // 记录实际 MIDI 值用于演唱画像
           });
         } else {
           setRealtimeScore('...');
@@ -982,7 +986,7 @@ export default function Home() {
       volStd,
       phraseScores
     );
-    addStudentCard(total, scorePitch, scoreRhythm, scoreEmotion, comments, blob, phraseScores);
+    addStudentCard(total, scorePitch, scoreRhythm, scoreEmotion, comments, blob, phraseScores, sampleData);
   };
 
   const generateDetailedComments = (
@@ -1199,9 +1203,11 @@ export default function Home() {
     e: number,
     comments: ScoreComments,
     blob: Blob,
-    phraseScores: PhraseScore[] = []
+    phraseScores: PhraseScore[] = [],
+    sampleData: SampleData[] = []
   ) => {
     const data = appDataRef.current;
+    const melodyData = data.melodyData;
     const name = `同学 ${String.fromCharCode(65 + data.students.length)}`;
     let rank = 'C';
     let color = '#ff453a';
@@ -1290,6 +1296,12 @@ export default function Home() {
           <div className="comment-item"><span className="c-label">❤️ 情绪:</span><span>{comments.emotion}</span></div>
         </div>
         {phraseDetails}
+        <SingingPortrait 
+          sampleData={sampleData}
+          melodyData={melodyData}
+          tolerance={CONFIG.tolerance}
+          studentName={name}
+        />
         <audio controls src={URL.createObjectURL(blob)} />
       </div>
     );
@@ -1306,7 +1318,8 @@ export default function Home() {
       rank,
       rankColor: color,
       comments,
-      phraseScores
+      phraseScores,
+      sampleData // 保存采样数据用于演唱画像
     };
     setStudentScoreData(prev => [scoreData, ...prev]);
     
