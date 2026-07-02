@@ -34,7 +34,26 @@ const midiToNoteName = (midi: number): string => {
 
 export default function SingingPortrait({ sampleData, melodyData, tolerance, studentName }: SingingPortraitProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
+  const [canvasWidth, setCanvasWidth] = useState(800);
+
+  // 计算动态宽度
+  useEffect(() => {
+    if (!sampleData || sampleData.length === 0) return;
+    
+    const allTimes = [
+      ...sampleData.map(s => s.time),
+      ...melodyData.map(m => m.time)
+    ];
+    const maxTime = Math.max(...allTimes);
+    
+    // 每秒 50px，确保数据点有足够空间
+    const pixelsPerSecond = 50;
+    const minWidth = 800;
+    const calculatedWidth = Math.max(minWidth, maxTime * pixelsPerSecond);
+    setCanvasWidth(calculatedWidth);
+  }, [sampleData, melodyData]);
 
   useEffect(() => {
     if (!expanded || !canvasRef.current) return;
@@ -43,15 +62,14 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // 设置 canvas 尺寸
-    const rect = canvas.getBoundingClientRect();
+    // 设置 canvas 尺寸 - 使用动态宽度
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
+    const height = 300;
+    canvas.width = canvasWidth * dpr;
+    canvas.height = height * dpr;
     ctx.scale(dpr, dpr);
 
-    const width = rect.width;
-    const height = rect.height;
+    const width = canvasWidth;
 
     // 清空画布
     ctx.fillStyle = '#1a1a1a';
@@ -71,7 +89,7 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
     const maxTime = Math.max(...allTimes);
     const timeRange = maxTime - minTime || 1;
 
-    // 计算 MIDI 范围 - 减少边距，让数据更紧凑
+    // 计算 MIDI 范围
     const allMidis = [
       ...sampleData.filter(s => s.midi).map(s => s.midi!),
       ...melodyData.map(m => m.midi)
@@ -88,13 +106,12 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
     ctx.strokeStyle = '#333';
     ctx.lineWidth = 0.5;
 
-    // 优化：根据 canvas 高度动态计算标签间隔，避免拥挤
-    // 每个标签至少需要 20px 的高度
+    // 根据 canvas 高度动态计算标签间隔
     const minLabelSpacing = 20;
     const maxLabels = Math.floor(plotHeight / minLabelSpacing);
     const labelInterval = Math.max(1, Math.ceil(midiRange / maxLabels));
     
-    // 水平网格线（MIDI）- 只绘制部分网格线，避免过于密集
+    // 水平网格线（MIDI）
     const gridInterval = Math.max(1, Math.ceil(midiRange / (plotHeight / 10)));
     for (let midi = Math.ceil(minMidi); midi <= maxMidi; midi += gridInterval) {
       const y = midiToY(midi);
@@ -104,7 +121,7 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
       ctx.stroke();
     }
 
-    // 标注音符名称 - 使用动态间隔
+    // 标注音符名称
     ctx.fillStyle = '#888';
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'right';
@@ -113,8 +130,8 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
       ctx.fillText(midiToNoteName(midi), padding.left - 8, y + 4);
     }
 
-    // 垂直网格线（时间）
-    const timeStep = timeRange > 60 ? 15 : timeRange > 30 ? 10 : timeRange > 10 ? 5 : 2;
+    // 垂直网格线（时间）- 根据宽度调整间隔
+    const timeStep = timeRange > 120 ? 30 : timeRange > 60 ? 15 : timeRange > 30 ? 10 : timeRange > 10 ? 5 : 2;
     for (let t = Math.ceil(minTime / timeStep) * timeStep; t <= maxTime; t += timeStep) {
       const x = timeToX(t);
       ctx.beginPath();
@@ -129,7 +146,7 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
       ctx.fillText(`${t}s`, x, height - padding.bottom + 18);
     }
 
-    // 绘制容错区域（标准旋律上下 tolerance 个半音）
+    // 绘制容错区域
     ctx.fillStyle = 'rgba(48, 209, 88, 0.1)';
     for (let i = 0; i < melodyData.length - 1; i++) {
       const m1 = melodyData[i];
@@ -143,7 +160,7 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
       ctx.fillRect(x1, yTop, x2 - x1, yBottom - yTop);
     }
 
-    // 绘制标准旋律 - 使用平滑曲线
+    // 绘制标准旋律
     ctx.strokeStyle = '#007aff';
     ctx.lineWidth = 2.5;
     ctx.beginPath();
@@ -160,11 +177,9 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
     }
     ctx.stroke();
 
-    // 绘制标准旋律点 - 降采样，减少点的数量
-    const melodyStep = Math.max(1, Math.floor(melodyData.length / 50));
+    // 绘制标准旋律点
     ctx.fillStyle = '#007aff';
-    for (let i = 0; i < melodyData.length; i += melodyStep) {
-      const point = melodyData[i];
+    for (const point of melodyData) {
       const x = timeToX(point.time);
       const y = midiToY(point.midi);
       ctx.beginPath();
@@ -172,7 +187,7 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
       ctx.fill();
     }
 
-    // 绘制学生演唱轨迹 - 使用连续线条，更流畅
+    // 绘制学生演唱轨迹
     ctx.lineWidth = 2;
     for (let i = 0; i < sampleData.length - 1; i++) {
       const s1 = sampleData[i];
@@ -185,7 +200,6 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
       const x2 = timeToX(s2.time);
       const y2 = midiToY(s2.midi);
 
-      // 根据是否命中选择颜色
       ctx.strokeStyle = s1.isHit ? '#30d158' : '#ff453a';
       ctx.beginPath();
       ctx.moveTo(x1, y1);
@@ -193,10 +207,8 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
       ctx.stroke();
     }
 
-    // 绘制学生演唱点 - 降采样，避免重叠
-    const sampleStep = Math.max(1, Math.floor(sampleData.length / 80));
-    for (let i = 0; i < sampleData.length; i += sampleStep) {
-      const sample = sampleData[i];
+    // 绘制学生演唱点
+    for (const sample of sampleData) {
       if (!sample.midi) continue;
       const x = timeToX(sample.time);
       const y = midiToY(sample.midi);
@@ -206,24 +218,21 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
       ctx.arc(x, y, 3.5, 0, Math.PI * 2);
       ctx.fill();
       
-      // 添加白色边框，增强可见性
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 0.5;
       ctx.stroke();
     }
 
-    // 绘制图例 - 优化布局
+    // 绘制图例
     const legendY = 12;
     ctx.font = '12px sans-serif';
     
-    // 标准旋律
     ctx.fillStyle = '#007aff';
     ctx.fillRect(padding.left, legendY, 20, 3);
     ctx.fillStyle = '#ccc';
     ctx.textAlign = 'left';
     ctx.fillText('标准旋律', padding.left + 25, legendY + 5);
 
-    // 学生演唱（命中）
     ctx.fillStyle = '#30d158';
     ctx.beginPath();
     ctx.arc(padding.left + 120, legendY + 2, 4, 0, Math.PI * 2);
@@ -231,7 +240,6 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
     ctx.fillStyle = '#ccc';
     ctx.fillText('命中', padding.left + 130, legendY + 5);
 
-    // 学生演唱（偏离）
     ctx.fillStyle = '#ff453a';
     ctx.beginPath();
     ctx.arc(padding.left + 180, legendY + 2, 4, 0, Math.PI * 2);
@@ -239,13 +247,12 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
     ctx.fillStyle = '#ccc';
     ctx.fillText('偏离', padding.left + 190, legendY + 5);
 
-    // 容错范围
     ctx.fillStyle = 'rgba(48, 209, 88, 0.3)';
     ctx.fillRect(padding.left + 240, legendY - 2, 15, 8);
     ctx.fillStyle = '#ccc';
     ctx.fillText('容错', padding.left + 260, legendY + 5);
 
-  }, [expanded, sampleData, melodyData, tolerance]);
+  }, [expanded, sampleData, melodyData, tolerance, canvasWidth]);
 
   if (!sampleData || sampleData.length === 0) {
     return null;
@@ -266,16 +273,27 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
           <div className="text-xs text-gray-400 mb-2">
             {studentName} 的演唱轨迹 vs 标准旋律
           </div>
-          <canvas
-            ref={canvasRef}
-            className="w-full rounded-lg border border-gray-700"
-            style={{ height: '300px' }}
-          />
+          {/* 可滚动容器 */}
+          <div 
+            ref={containerRef}
+            className="overflow-x-auto rounded-lg border border-gray-700"
+            style={{ maxWidth: '100%' }}
+          >
+            <canvas
+              ref={canvasRef}
+              style={{ 
+                width: `${canvasWidth}px`, 
+                height: '300px',
+                display: 'block'
+              }}
+            />
+          </div>
           <div className="mt-2 text-[10px] text-gray-500 flex flex-wrap gap-3">
             <span>🟢 命中标准音</span>
             <span>🔴 偏离标准音</span>
             <span>🔵 标准旋律</span>
             <span>🟩 容错范围</span>
+            <span className="text-gray-600">← 可左右滚动查看完整轨迹 →</span>
           </div>
         </div>
       )}
