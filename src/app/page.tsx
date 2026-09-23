@@ -1955,7 +1955,7 @@ export default function Home() {
         <div className="border-t border-[#333] px-[15px] py-[15px] flex flex-col gap-2">
           <button
             onClick={handleShare}
-            disabled={students.length === 0}
+            disabled={studentScoreData.length === 0 && !refBuffer}
             className="w-full rounded-lg border-none bg-[#0a84ff] py-3 text-[14px] text-white cursor-pointer hover:bg-[#0070e0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             分享课堂
@@ -2208,7 +2208,7 @@ export default function Home() {
                   )}
                 </div>
                 <div className="mt-4 flex flex-col gap-2">
-                  <button onClick={handleShare} disabled={students.length === 0} className="w-full bg-[#0a84ff] text-white py-3 rounded-lg text-sm disabled:opacity-50">
+                  <button onClick={handleShare} disabled={studentScoreData.length === 0 && !refBuffer} className="w-full bg-[#0a84ff] text-white py-3 rounded-lg text-sm disabled:opacity-50">
                     分享课堂
                   </button>
                   <button onClick={resetClassroom} className="w-full bg-[#333] text-[#aaa] py-3 rounded-lg text-sm">
