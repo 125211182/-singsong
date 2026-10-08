@@ -35,41 +35,55 @@ const midiToNoteName = (midi: number): string => {
 export default function SingingPortrait({ sampleData, melodyData, tolerance, studentName }: SingingPortraitProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [expanded, setExpanded] = useState(false);
   const [canvasWidth, setCanvasWidth] = useState(800);
+  const [canvasHeight, setCanvasHeight] = useState(300);
 
-  // 计算动态宽度
+  // 宽度随歌曲时长动态计算（每秒 50px，超出可横向滚动）
   useEffect(() => {
     if (!sampleData || sampleData.length === 0) return;
-    
+
     const allTimes = [
       ...sampleData.map(s => s.time),
       ...melodyData.map(m => m.time)
     ];
     const maxTime = Math.max(...allTimes);
-    
-    // 每秒 50px，确保数据点有足够空间
+
     const pixelsPerSecond = 50;
     const minWidth = 800;
-    const calculatedWidth = Math.max(minWidth, maxTime * pixelsPerSecond);
-    setCanvasWidth(calculatedWidth);
+    setCanvasWidth(Math.max(minWidth, maxTime * pixelsPerSecond));
   }, [sampleData, melodyData]);
 
+  // 高度跟随容器，填满所在区域（监听容器尺寸变化）
   useEffect(() => {
-    if (!expanded || !canvasRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    const updateHeight = () => {
+      const h = container.clientHeight;
+      if (h > 0) setCanvasHeight(h);
+    };
+
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  // 绘制画像
+  useEffect(() => {
+    if (!canvasRef.current || !sampleData || sampleData.length === 0) return;
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // 设置 canvas 尺寸 - 使用动态宽度
+    // 设置 canvas 尺寸 - 使用动态宽高
     const dpr = window.devicePixelRatio || 1;
-    const height = 300;
-    canvas.width = canvasWidth * dpr;
+    const width = canvasWidth;
+    const height = canvasHeight;
+    canvas.width = width * dpr;
     canvas.height = height * dpr;
     ctx.scale(dpr, dpr);
-
-    const width = canvasWidth;
 
     // 清空画布
     ctx.fillStyle = '#1a1a1a';
@@ -110,7 +124,7 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
     const minLabelSpacing = 20;
     const maxLabels = Math.floor(plotHeight / minLabelSpacing);
     const labelInterval = Math.max(1, Math.ceil(midiRange / maxLabels));
-    
+
     // 水平网格线（MIDI）
     const gridInterval = Math.max(1, Math.ceil(midiRange / (plotHeight / 10)));
     for (let midi = Math.ceil(minMidi); midi <= maxMidi; midi += gridInterval) {
@@ -151,7 +165,7 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
     for (let i = 0; i < melodyData.length - 1; i++) {
       const m1 = melodyData[i];
       const m2 = melodyData[i + 1];
-      
+
       const x1 = timeToX(m1.time);
       const x2 = timeToX(m2.time);
       const yTop = midiToY(m1.midi + tolerance);
@@ -212,12 +226,12 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
       if (!sample.midi) continue;
       const x = timeToX(sample.time);
       const y = midiToY(sample.midi);
-      
+
       ctx.fillStyle = sample.isHit ? '#30d158' : '#ff453a';
       ctx.beginPath();
       ctx.arc(x, y, 3.5, 0, Math.PI * 2);
       ctx.fill();
-      
+
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 0.5;
       ctx.stroke();
@@ -226,7 +240,7 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
     // 绘制图例
     const legendY = 12;
     ctx.font = '12px sans-serif';
-    
+
     ctx.fillStyle = '#007aff';
     ctx.fillRect(padding.left, legendY, 20, 3);
     ctx.fillStyle = '#ccc';
@@ -252,51 +266,38 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
     ctx.fillStyle = '#ccc';
     ctx.fillText('容错', padding.left + 260, legendY + 5);
 
-  }, [expanded, sampleData, melodyData, tolerance, canvasWidth]);
+  }, [sampleData, melodyData, tolerance, canvasWidth, canvasHeight]);
 
   if (!sampleData || sampleData.length === 0) {
     return null;
   }
 
   return (
-    <div className="mt-2 border-t border-gray-700 pt-2">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+    <div className="flex h-full w-full min-h-0 min-w-0 flex-col">
+      <div className="mb-2 shrink-0 text-xs text-gray-400">
+        {studentName} 的演唱轨迹 vs 标准旋律
+      </div>
+      {/* 可横向滚动画布容器（min-w-0 防止超宽画布撑爆布局） */}
+      <div
+        ref={containerRef}
+        className="min-h-0 min-w-0 w-full flex-1 overflow-x-auto overflow-y-hidden rounded-lg border border-gray-700"
       >
-        <span className={`transform transition-transform ${expanded ? 'rotate-90' : ''}`}>▶</span>
-        <span>🎼 演唱画像</span>
-      </button>
-
-      {expanded && (
-        <div className="mt-2">
-          <div className="text-xs text-gray-400 mb-2">
-            {studentName} 的演唱轨迹 vs 标准旋律
-          </div>
-          {/* 可滚动容器 */}
-          <div 
-            ref={containerRef}
-            className="overflow-x-auto rounded-lg border border-gray-700"
-            style={{ maxWidth: '100%' }}
-          >
-            <canvas
-              ref={canvasRef}
-              style={{ 
-                width: `${canvasWidth}px`, 
-                height: '300px',
-                display: 'block'
-              }}
-            />
-          </div>
-          <div className="mt-2 text-[10px] text-gray-500 flex flex-wrap gap-3">
-            <span>🟢 命中标准音</span>
-            <span>🔴 偏离标准音</span>
-            <span>🔵 标准旋律</span>
-            <span>🟩 容错范围</span>
-            <span className="text-gray-600">← 可左右滚动查看完整轨迹 →</span>
-          </div>
-        </div>
-      )}
+        <canvas
+          ref={canvasRef}
+          style={{
+            width: `${canvasWidth}px`,
+            height: `${canvasHeight}px`,
+            display: 'block'
+          }}
+        />
+      </div>
+      <div className="mt-2 shrink-0 text-[10px] text-gray-500 flex flex-wrap gap-3">
+        <span>🟢 命中标准音</span>
+        <span>🔴 偏离标准音</span>
+        <span>🔵 标准旋律</span>
+        <span>🟩 容错范围</span>
+        <span className="text-gray-600">← 可左右滚动查看完整轨迹 →</span>
+      </div>
     </div>
   );
 }

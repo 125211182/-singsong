@@ -1973,11 +1973,11 @@ export default function Home() {
       </div>
 
       {/* 桌面端右侧整体：测评区 + 乐谱 + 演唱画像(垂直) */}
-      <div className="hidden md:flex flex-1 flex-col min-h-0">
+      <div className="hidden md:flex flex-1 flex-col min-h-0 min-w-0">
         {/* 上半水平行：测评区 + 乐谱视窗(等高，按内容高度) */}
         <div className="flex shrink-0 min-h-0">
           {/* 中间：主控台（测评区） */}
-      <div className="flex flex-1 flex-col items-center overflow-y-auto min-h-0 p-5 border-r border-[#333] md:p-3">
+      <div className="flex flex-1 flex-col items-center overflow-y-auto min-h-0 min-w-0 p-5 border-r border-[#333] md:p-3">
         <div className="w-full max-w-[1200px] rounded-2xl bg-[#1e1e20] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.4)] border border-[#333]">
           <h2 className="mb-5 flex items-center justify-between text-lg">
             <span>🎹 智能声乐评测 <span style={{ fontSize: '12px', background: '#333', padding: '2px 6px', borderRadius: '4px', color: '#aaa' }}>V9.0</span></span>
@@ -2066,17 +2066,17 @@ export default function Home() {
 
           {/* 右侧：乐谱视窗(等高) */}
           <div className="w-[460px] shrink-0 flex flex-col bg-[#151517]">
-        {/* 上半部分：乐谱视窗 */}
-        <div className="flex flex-col border-b border-[#333]">
+        {/* 上半部分：乐谱视窗（填满列高，图片垂直居中展示） */}
+        <div className="flex flex-1 flex-col border-b border-[#333] min-h-0">
           <div className="border-b border-[#333] bg-[#1c1c1f] px-8 py-[15px] flex items-center justify-between">
             <span className="font-bold text-lg">🎼 乐谱视窗</span>
             <span className="text-[12px] text-[#666]">支持滚动查看</span>
           </div>
-          <div className="flex-1 overflow-y-auto p-[25px]" style={{ backgroundImage: 'radial-gradient(#222 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
+          <div className="flex flex-1 flex-col overflow-y-auto p-[25px]" style={{ backgroundImage: 'radial-gradient(#222 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
             {scoreImage ? (
-              <img src={scoreImage} alt="Sheet Music" className="w-full rounded-lg shadow-[0_4px_10px_rgba(0,0,0,0.5)]" />
+              <img src={scoreImage} alt="Sheet Music" className="my-auto w-full rounded-lg shadow-[0_4px_10px_rgba(0,0,0,0.5)]" />
             ) : (
-              <div className="mt-[50%] text-center text-[#555] -translate-y-1/2">
+              <div className="my-auto text-center text-[#555]">
                 未上传乐谱<br />
                 <span className="text-[12px] text-[#444]">请点击"3. 乐谱"加载图片</span>
               </div>
@@ -2086,7 +2086,7 @@ export default function Home() {
           </div>
         </div>
         {/* 下半部分：演唱画像（常驻，横跨测评区+乐谱，填满其余空间） */}
-        <div className="flex flex-1 flex-col border-t border-[#333] p-3 min-h-0">
+        <div className="flex flex-1 flex-col border-t border-[#333] p-3 min-h-0 min-w-0">
           <button
             onClick={() => setPortraitExpanded(v => !v)}
             className="flex items-center justify-between mb-2 rounded-lg bg-[#1c1c1f] border border-[#333] px-3 py-2 text-sm font-bold text-white cursor-pointer hover:bg-[#242427] transition-colors"
@@ -2096,7 +2096,7 @@ export default function Home() {
               {studentScoreData.length === 0 ? '即将展示' : (portraitExpanded ? '▲ 收起' : '▼ 展开')}
             </span>
           </button>
-          <div className="flex flex-1 flex-col gap-2 mt-2 min-h-0">
+          <div className="flex flex-1 flex-col gap-2 mt-2 min-h-0 min-w-0">
             {studentScoreData.length > 0 ? (
               <>
                 <div className="flex items-center justify-end">
@@ -2110,7 +2110,7 @@ export default function Home() {
                     ))}
                   </select>
                 </div>
-                <div className="flex-1 rounded-xl bg-[#1e1e20] border border-[#333] p-2 overflow-hidden min-h-0">
+                <div className="flex-1 rounded-xl bg-[#1e1e20] border border-[#333] p-2 overflow-hidden min-h-0 min-w-0">
                   {portraitExpanded ? (
                     <SingingPortrait 
                       sampleData={studentScoreData[portraitStudentIndex]?.sampleData || []}
@@ -2200,12 +2200,14 @@ export default function Home() {
                   )}
                 </div>
                 {studentScoreData.length > 0 ? (
-                  <SingingPortrait 
-                    sampleData={studentScoreData[portraitStudentIndex]?.sampleData || []}
-                    melodyData={appDataRef.current.melodyData}
-                    tolerance={CONFIG.tolerance}
-                    studentName={studentScoreData[portraitStudentIndex]?.name || ''}
-                  />
+                  <div className="h-[340px]">
+                    <SingingPortrait
+                      sampleData={studentScoreData[portraitStudentIndex]?.sampleData || []}
+                      melodyData={appDataRef.current.melodyData}
+                      tolerance={CONFIG.tolerance}
+                      studentName={studentScoreData[portraitStudentIndex]?.name || ''}
+                    />
+                  </div>
                 ) : (
                   <div className="h-[80px] flex items-center justify-center text-[#666] text-xs">
                     暂无演唱数据
