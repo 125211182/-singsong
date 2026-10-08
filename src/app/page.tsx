@@ -1972,8 +1972,12 @@ export default function Home() {
         </div>
       </div>
 
-      {/* 中间：主控台 */}
-      <div className="flex flex-1 flex-col items-center overflow-y-auto p-5 border-r border-[#333] md:p-3">
+      {/* 桌面端右侧整体：测评区 + 乐谱 + 演唱画像(垂直) */}
+      <div className="hidden md:flex flex-1 flex-col min-h-0">
+        {/* 上半水平行：测评区 + 乐谱视窗(等高) */}
+        <div className="flex flex-1 min-h-0">
+          {/* 中间：主控台（测评区） */}
+      <div className="flex flex-1 flex-col items-center overflow-y-auto min-h-0 p-5 border-r border-[#333] md:p-3">
         <div className="w-full max-w-[1200px] rounded-2xl bg-[#1e1e20] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.4)] border border-[#333]">
           <h2 className="mb-5 flex items-center justify-between text-lg">
             <span>🎹 智能声乐评测 <span style={{ fontSize: '12px', background: '#333', padding: '2px 6px', borderRadius: '4px', color: '#aaa' }}>V9.0</span></span>
@@ -2060,10 +2064,10 @@ export default function Home() {
         </div>
       </div>
 
-      {/* 桌面端右侧：乐谱视窗 + 演唱画像（垂直布局） */}
-      <div className="hidden md:flex h-full w-[460px] shrink-0 flex-col bg-[#151517]">
+          {/* 右侧：乐谱视窗(等高) */}
+          <div className="w-[460px] shrink-0 flex flex-col bg-[#151517]">
         {/* 上半部分：乐谱视窗 */}
-        <div className="h-[340px] shrink-0 flex flex-col border-b border-[#333]">
+        <div className="flex-1 flex flex-col border-b border-[#333]">
           <div className="border-b border-[#333] bg-[#1c1c1f] px-8 py-[15px] flex items-center justify-between">
             <span className="font-bold text-lg">🎼 乐谱视窗</span>
             <span className="text-[12px] text-[#666]">支持滚动查看</span>
@@ -2079,8 +2083,10 @@ export default function Home() {
             )}
           </div>
         </div>
-        {/* 下半部分：演唱画像（可折叠） */}
-        <div className="flex flex-col p-3 min-h-0">
+          </div>
+        </div>
+        {/* 下半部分：演唱画像（折叠，横跨测评区+乐谱） */}
+        <div className="shrink-0 flex flex-col border-t border-[#333] p-3">
           <button
             onClick={() => setPortraitExpanded(v => !v)}
             className="flex items-center justify-between mb-2 rounded-lg bg-[#1c1c1f] border border-[#333] px-3 py-2 text-sm font-bold text-white cursor-pointer hover:bg-[#242427] transition-colors"
