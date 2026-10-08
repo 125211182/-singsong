@@ -1914,6 +1914,9 @@ export default function Home() {
   // 移动端当前激活的标签页
   const [mobileTab, setMobileTab] = useState<'main' | 'records' | 'score'>('main');
 
+  // 演唱画像是否展开
+  const [portraitExpanded, setPortraitExpanded] = useState(false);
+
   // 当移动端主控台可见且正在录音时，恢复drawLoop
   useEffect(() => {
     if (mobileTab === 'main' && appDataRef.current.isPlaying) {
@@ -2058,7 +2061,7 @@ export default function Home() {
       </div>
 
       {/* 桌面端右侧：乐谱视窗 + 演唱画像（垂直布局） */}
-      <div className="hidden md:flex h-full w-[600px] shrink-0 flex-col bg-[#151517]">
+      <div className="hidden md:flex h-full w-[460px] shrink-0 flex-col bg-[#151517]">
         {/* 上半部分：乐谱视窗 */}
         <div className="h-[340px] shrink-0 flex flex-col border-b border-[#333]">
           <div className="border-b border-[#333] bg-[#1c1c1f] px-8 py-[15px] flex items-center justify-between">
@@ -2076,39 +2079,45 @@ export default function Home() {
             )}
           </div>
         </div>
-        {/* 下半部分：演唱画像 */}
-        <div className="flex-1 flex flex-col p-3 min-h-0">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-bold text-white">🎼 演唱画像</span>
-            {studentScoreData.length > 0 && (
-              <select 
-                value={portraitStudentIndex}
-                onChange={(e) => setPortraitStudentIndex(Number(e.target.value))}
-                className="text-xs bg-[#2a2a2d] border border-[#444] rounded px-2 py-1 text-white"
-              >
-                {studentScoreData.map((s, i) => (
-                  <option key={i} value={i}>{s.name}</option>
-                ))}
-              </select>
-            )}
-          </div>
-          <div className="flex-1 rounded-xl bg-[#1e1e20] border border-[#333] p-2 overflow-hidden min-h-0">
-            {studentScoreData.length > 0 ? (
-              <SingingPortrait 
-                sampleData={studentScoreData[portraitStudentIndex]?.sampleData || []}
-                melodyData={appDataRef.current.melodyData}
-                tolerance={CONFIG.tolerance}
-                studentName={studentScoreData[portraitStudentIndex]?.name || ''}
-              />
-            ) : (
-              <div className="h-full flex items-center justify-center text-[#666] text-sm">
-                暂无演唱数据，完成演唱后显示画像
+        {/* 下半部分：演唱画像（可折叠） */}
+        <div className="flex flex-col p-3 min-h-0">
+          <button
+            onClick={() => setPortraitExpanded(v => !v)}
+            className="flex items-center justify-between mb-2 rounded-lg bg-[#1c1c1f] border border-[#333] px-3 py-2 text-sm font-bold text-white cursor-pointer hover:bg-[#242427] transition-colors"
+          >
+            <span>🎼 演唱画像 {studentScoreData.length > 0 && <span className="text-[12px] text-[#666]">（{studentScoreData[portraitStudentIndex]?.name}）</span>}</span>
+            <span className="text-[#0a84ff]">{portraitExpanded ? '▲ 收起' : '▼ 展开'}</span>
+          </button>
+          {portraitExpanded && studentScoreData.length > 0 && (
+            <div className="flex flex-col gap-2 mt-2 min-h-0">
+              <div className="flex items-center justify-end">
+                <select 
+                  value={portraitStudentIndex}
+                  onChange={(e) => setPortraitStudentIndex(Number(e.target.value))}
+                  className="text-xs bg-[#2a2a2d] border border-[#444] rounded px-2 py-1 text-white"
+                >
+                  {studentScoreData.map((s, i) => (
+                    <option key={i} value={i}>{s.name}</option>
+                  ))}
+                </select>
               </div>
-            )}
-          </div>
+              <div className="flex-1 rounded-xl bg-[#1e1e20] border border-[#333] p-2 overflow-hidden min-h-0">
+                <SingingPortrait 
+                  sampleData={studentScoreData[portraitStudentIndex]?.sampleData || []}
+                  melodyData={appDataRef.current.melodyData}
+                  tolerance={CONFIG.tolerance}
+                  studentName={studentScoreData[portraitStudentIndex]?.name || ''}
+                />
+              </div>
+            </div>
+          )}
+          {portraitExpanded && studentScoreData.length === 0 && (
+            <div className="rounded-xl bg-[#1e1e20] border border-[#333] p-4 mt-2 text-center text-[#666] text-sm">
+              暂无演唱数据，完成演唱后显示画像
+            </div>
+          )}
         </div>
       </div>
-
       {/* 移动端视图 */}
       <div className="md:hidden fixed inset-0 flex flex-col bg-[#121214]">
         {/* 移动端内容区 */}
