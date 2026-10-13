@@ -50,7 +50,10 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
 
     const pixelsPerSecond = 50;
     const minWidth = 800;
-    setCanvasWidth(Math.max(minWidth, maxTime * pixelsPerSecond));
+    // 宽度安全上限：backing store = 宽 × DPR(上限1.5)，需低于老显卡 8192 纹理上限
+    // 5400 × 1.5 = 8100 < 8192，约 108 秒内仍保持 50px/秒的舒展比例
+    const maxWidth = 5400;
+    setCanvasWidth(Math.min(maxWidth, Math.max(minWidth, maxTime * pixelsPerSecond)));
   }, [sampleData, melodyData]);
 
   // 高度跟随容器，填满所在区域（监听容器尺寸变化）
@@ -64,9 +67,16 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
     };
 
     updateHeight();
-    const observer = new ResizeObserver(updateHeight);
-    observer.observe(container);
-    return () => observer.disconnect();
+
+    // 旧浏览器内核（如老 Edge/嵌入式浏览器）不支持 ResizeObserver 时降级为监听窗口缩放
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(updateHeight);
+      observer.observe(container);
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener('resize', updateHeight);
+    return () => window.removeEventListener('resize', updateHeight);
   }, []);
 
   // 绘制画像
@@ -78,7 +88,8 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
     if (!ctx) return;
 
     // 设置 canvas 尺寸 - 使用动态宽高
-    const dpr = window.devicePixelRatio || 1;
+    // 像素比上限 1.5：避免高分屏(4K/缩放)下 backing store 超过老核显 GPU 纹理上限导致画布空白
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     const width = canvasWidth;
     const height = canvasHeight;
     canvas.width = width * dpr;

@@ -1972,8 +1972,8 @@ export default function Home() {
         </div>
       </div>
 
-      {/* 桌面端右侧整体：测评区 + 乐谱 + 演唱画像(垂直) */}
-      <div className="hidden md:flex flex-1 flex-col min-h-0 min-w-0">
+      {/* 桌面端右侧整体：测评区 + 乐谱 + 演唱画像(垂直)，短视口时允许整体滚动防止画像被压没 */}
+      <div className="hidden md:flex flex-1 flex-col min-h-0 min-w-0 overflow-y-auto">
         {/* 上半水平行：测评区 + 乐谱视窗(等高，按内容高度) */}
         <div className="flex shrink-0 min-h-0">
           {/* 中间：主控台（测评区） */}
@@ -2085,8 +2085,8 @@ export default function Home() {
         </div>
           </div>
         </div>
-        {/* 下半部分：演唱画像（常驻，横跨测评区+乐谱，填满其余空间） */}
-        <div className="flex flex-1 flex-col border-t border-[#333] p-3 min-h-0 min-w-0">
+        {/* 下半部分：演唱画像（常驻，横跨测评区+乐谱，填满其余空间，最小高度防塌陷） */}
+        <div className="flex flex-1 flex-col border-t border-[#333] p-3 min-h-[260px] min-w-0 shrink-0">
           <button
             onClick={() => setPortraitExpanded(v => !v)}
             className="flex items-center justify-between mb-2 rounded-lg bg-[#1c1c1f] border border-[#333] px-3 py-2 text-sm font-bold text-white cursor-pointer hover:bg-[#242427] transition-colors"
