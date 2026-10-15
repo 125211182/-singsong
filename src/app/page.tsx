@@ -11,6 +11,133 @@ const CONFIG = {
   minVol: 0.015   // 降低音量阈值，更容易检测
 };
 
+// ================= 等级体系（一分一级 + 荣誉称号）=================
+interface RankInfo {
+  lv: number;           // 等级 = 总分（一分一级）
+  title: string;        // 荣誉称号
+  color: string;        // 随分数渐变的颜色
+  nextTitle?: string;   // 下一称号
+  nextTitleAt?: number; // 晋升下一称号所需分数
+}
+
+// 称号表（从高到低，命中第一个 min <= score 的称号）
+const RANK_TIERS: { min: number; title: string }[] = [
+  { min: 100, title: '天籁传奇' },
+  { min: 97, title: '殿堂歌者' },
+  { min: 94, title: '金牌唱将' },
+  { min: 91, title: '舞台之星' },
+  { min: 88, title: '实力唱将' },
+  { min: 85, title: '闪耀新星' },
+  { min: 82, title: '进阶达人' },
+  { min: 79, title: '潜力唱将' },
+  { min: 76, title: '稳定发挥' },
+  { min: 73, title: '渐入佳境' },
+  { min: 70, title: '稳步提升' },
+  { min: 65, title: '崭露头角' },
+  { min: 60, title: '勤学新星' },
+  { min: 55, title: '勇敢开嗓' },
+  { min: 0, title: '加油起步' },
+];
+
+// 颜色随分数渐变：红 → 橙 → 蓝 → 绿 → 金（每一分颜色都略有不同）
+const getRankColor = (score: number): string => {
+  const stops: [number, number, number, number][] = [
+    [0, 255, 107, 107],
+    [55, 255, 69, 58],
+    [62, 255, 159, 10],
+    [70, 10, 132, 255],
+    [82, 48, 209, 88],
+    [94, 255, 214, 10],
+    [100, 255, 233, 130],
+  ];
+  const s = Math.max(0, Math.min(100, score));
+  for (let i = 0; i < stops.length - 1; i++) {
+    const [s0, r0, g0, b0] = stops[i];
+    const [s1, r1, g1, b1] = stops[i + 1];
+    if (s >= s0 && s <= s1) {
+      const t = (s - s0) / (s1 - s0);
+      return `rgb(${Math.round(r0 + (r1 - r0) * t)}, ${Math.round(g0 + (g1 - g0) * t)}, ${Math.round(b0 + (b1 - b0) * t)})`;
+    }
+  }
+  return 'rgb(255, 233, 130)';
+};
+
+const getRankInfo = (score: number): RankInfo => {
+  const idx = RANK_TIERS.findIndex(t => score >= t.min);
+  const tier = idx >= 0 ? RANK_TIERS[idx] : RANK_TIERS[RANK_TIERS.length - 1];
+  const next = idx > 0 ? RANK_TIERS[idx - 1] : undefined;
+  return {
+    lv: score,
+    title: tier.title,
+    color: getRankColor(score),
+    nextTitle: next?.title,
+    nextTitleAt: next?.min,
+  };
+};
+
+// 称号专属评语库（每个称号 1~2 条，总评还会嵌入具体分数与晋升提示，保证每级评语都不同）
+const TITLE_COMMENTS: Record<string, string[]> = {
+  '天籁传奇': [
+    '满分传奇！无可挑剔的完美演唱，已达专业歌唱家水准！',
+  ],
+  '殿堂歌者': [
+    '殿堂级表现！距离满分传奇仅一步之遥，音色与控制力令人惊艳！',
+    '歌者风范！整体完成度接近完美，每一个音符都在掌控之中！',
+  ],
+  '金牌唱将': [
+    '金牌水准！音准、节奏、情感全面在线，是大家学习的榜样！',
+    '唱将实力！整场演唱稳定而精彩，细节处理非常到位！',
+  ],
+  '舞台之星': [
+    '舞台表现力出众！声音自信、表达流畅，已具备登台演唱的实力！',
+    '星光闪耀！演唱完整而富有感染力，继续保持这份舞台感！',
+  ],
+  '实力唱将': [
+    '实力在线！演唱稳定扎实，距离舞台之星只有细微差距！',
+    '唱将潜质！整体表现优秀，再打磨细节就更出彩！',
+  ],
+  '闪耀新星': [
+    '新星闪耀！演唱完整流畅，声音里透着自信的光芒！',
+    '表现出色！各维度均衡发展，继续保持稳步上升！',
+  ],
+  '进阶达人': [
+    '进阶有方！演唱完成度很好，技巧正在快速提升！',
+    '达人之路！整体表现良好，细节打磨后会更上一层楼！',
+  ],
+  '潜力唱将': [
+    '潜力十足！演唱有不少亮点，继续挖掘声音的可能性！',
+    '唱将潜质！基础扎实，加强稳定性会有质的飞跃！',
+  ],
+  '稳定发挥': [
+    '发挥稳定！完整唱完全曲，保持良好的演唱状态！',
+    '稳稳当当！整体表现可圈可点，继续向更高目标迈进！',
+  ],
+  '渐入佳境': [
+    '渐入佳境！演唱越来越顺，继续保持这份进步势头！',
+    '状态渐好！多数段落表现不错，整体性还可再提升！',
+  ],
+  '稳步提升': [
+    '稳步提升中！已经完成演唱，每个细节的进步都值得肯定！',
+    '提升明显！继续练习，音准和节奏会越来越稳！',
+  ],
+  '崭露头角': [
+    '崭露头角！已经展现出不俗的演唱感觉，继续加油！',
+    '初露锋芒！基础已经打牢，向更高分数冲刺吧！',
+  ],
+  '勤学新星': [
+    '勤学进步！完整参与演唱就是最大的收获，继续努力！',
+    '新星启程！坚持练习音准和节奏，进步会肉眼可见！',
+  ],
+  '勇敢开嗓': [
+    '勇敢开嗓！敢于完整演唱就值得点赞，多听多唱会更棒！',
+    '勇气可嘉！跟着范唱多练几遍，下次一定会更好！',
+  ],
+  '加油起步': [
+    '加油起步！别灰心，先跟着范唱慢慢找感觉，你一定行！',
+    '迈出第一步最重要！建议分段练习，一小节一小节来！',
+  ],
+};
+
 // ================= 类型定义 =================
 interface MelodyPoint {
   time: number;
@@ -23,6 +150,7 @@ interface Student {
 }
 
 interface ScoreComments {
+  overall: string; // 总评（称号评语 + 实时数据 + 晋升提示）
   pitch: string;
   rhythm: string;
   emotion: string;
@@ -47,6 +175,7 @@ interface StudentScoreData {
   emotion: number;
   rank: string;
   rankColor: string;
+  rankTitle?: string; // 荣誉称号（旧分享数据可能没有）
   comments: ScoreComments;
   phraseScores: PhraseScore[];
   audioUrl?: string; // 录音文件URL（分享后才有）
@@ -1007,27 +1136,47 @@ export default function Home() {
     volStd: number,
     phraseScores: PhraseScore[]
   ): ScoreComments => {
-    // ========== 音准评语（保持现有，增加专业指导）==========
+    // ========== 音准评语（10 档细分，每 5 分一档）==========
     const pitchComments = {
       perfect: [
         "音准极其精准！每个音都落在标准位置，专业级听觉表现！",
         "音高控制能力卓越，听感舒适稳定，音准偏差极小！",
         "音准完美！几乎零误差，完全符合专业演唱标准！"
       ],
+      amazing: [
+        "音准近乎完美！绝大多数音符精准落位，只差毫厘！",
+        "音高控制接近专业水准，细听几乎挑不出毛病！"
+      ],
       excellent: [
         "音准非常出色！绝大部分音都准确到位，听觉体验极佳！",
         "音高控制优秀，偶有小偏差但不影响整体音乐表现！",
         "音准表现优秀！核心音符非常稳定，令人满意！"
+      ],
+      great: [
+        "音准优秀！核心音准稳定，个别细节音再精确些更好！",
+        "音高把握到位！主旋律精准，注意过渡音的落点！"
       ],
       good: [
         "音准表现良好！大部分音符准确，注意细节音准会更出色！",
         "整体音准达标，多做音阶练习有助于提升精确度！",
         "音准基本合格，注意半音和全音的细微差异会更好！"
       ],
+      okay: [
+        "音准中上！大框架准确，注意高音区的音准控制！",
+        "音高方向正确，个别长音容易跑偏，保持气息支撑！"
+      ],
       fair: [
         "音准有波动，建议每天练习音阶和琶音，提升听觉敏感度！",
         "部分音高需要调整，多听多唱，培养固定音准感！",
         "音准还在发展中，建议用钢琴辅助练习，找准每个音位！"
+      ],
+      developing: [
+        "音准基本成型，建议跟钢琴哼唱音阶，巩固音高概念！",
+        "音高感觉在建立中，先唱准主音，再扩展音域！"
+      ],
+      weak: [
+        "音准还在起步阶段，先慢唱准每个音，再追求连贯！",
+        "音高偏差较多，建议一句一句跟唱范唱，逐句校准！"
       ],
       poor: [
         "音准需要加强，建议从基础音阶开始，每天坚持练习！",
@@ -1038,9 +1187,14 @@ export default function Home() {
 
     let cPitch = "";
     if (p >= 95) cPitch = pitchComments.perfect[Math.floor(Math.random() * pitchComments.perfect.length)];
+    else if (p >= 90) cPitch = pitchComments.amazing[Math.floor(Math.random() * pitchComments.amazing.length)];
     else if (p >= 85) cPitch = pitchComments.excellent[Math.floor(Math.random() * pitchComments.excellent.length)];
+    else if (p >= 80) cPitch = pitchComments.great[Math.floor(Math.random() * pitchComments.great.length)];
     else if (p >= 75) cPitch = pitchComments.good[Math.floor(Math.random() * pitchComments.good.length)];
-    else if (p >= 60) cPitch = pitchComments.fair[Math.floor(Math.random() * pitchComments.fair.length)];
+    else if (p >= 70) cPitch = pitchComments.okay[Math.floor(Math.random() * pitchComments.okay.length)];
+    else if (p >= 65) cPitch = pitchComments.fair[Math.floor(Math.random() * pitchComments.fair.length)];
+    else if (p >= 60) cPitch = pitchComments.developing[Math.floor(Math.random() * pitchComments.developing.length)];
+    else if (p >= 55) cPitch = pitchComments.weak[Math.floor(Math.random() * pitchComments.weak.length)];
     else cPitch = pitchComments.poor[Math.floor(Math.random() * pitchComments.poor.length)];
 
     // 根据具体偏差补充专业评语
@@ -1194,7 +1348,20 @@ export default function Home() {
 
     const cEmotion = emotionMainComment + emotionTechnicalComment;
 
-    return { pitch: cPitch, rhythm: cRhythm, emotion: cEmotion };
+    // ========== 总评（称号评语 + 实时数据 + 晋升提示）==========
+    const rankInfo = getRankInfo(total);
+    const titlePool = TITLE_COMMENTS[rankInfo.title] || [];
+    let cOverall = titlePool.length > 0
+      ? titlePool[Math.floor(Math.random() * titlePool.length)]
+      : '';
+    cOverall += ` 本次总分 ${total} 分（音准 ${p} · 节奏 ${r} · 情绪 ${e}），当前等级 Lv.${total}「${rankInfo.title}」。`;
+    if (rankInfo.nextTitle && rankInfo.nextTitleAt !== undefined) {
+      cOverall += ` 再得 ${rankInfo.nextTitleAt - total} 分即可晋升「${rankInfo.nextTitle}」（Lv.${rankInfo.nextTitleAt}），继续加油！`;
+    } else {
+      cOverall += ' 已登顶最高荣誉，你就是全场的焦点！';
+    }
+
+    return { overall: cOverall, pitch: cPitch, rhythm: cRhythm, emotion: cEmotion };
   };
 
   const addStudentCard = (
@@ -1210,20 +1377,11 @@ export default function Home() {
     const data = appDataRef.current;
     const melodyData = data.melodyData;
     const name = `同学 ${String.fromCharCode(65 + data.students.length)}`;
-    let rank = 'C';
-    let color = '#ff453a';
-
-    // 调整等级标准，更加鼓励
-    if (total >= 95) { rank = 'S+'; color = '#ffd60a'; } // 金色
-    else if (total >= 90) { rank = 'S'; color = '#ffd60a'; }
-    else if (total >= 85) { rank = 'A+'; color = '#30d158'; }
-    else if (total >= 80) { rank = 'A'; color = '#30d158'; }
-    else if (total >= 75) { rank = 'B+'; color = '#0a84ff'; }
-    else if (total >= 70) { rank = 'B'; color = '#0a84ff'; }
-    else if (total >= 65) { rank = 'B-'; color = '#0a84ff'; } // 改为B-，更鼓励
-    else if (total >= 60) { rank = 'C'; color = '#ff453a'; }
-    else if (total >= 55) { rank = 'C-'; color = '#ff453a'; }
-    else { rank = 'D'; color = '#ff6b6b'; }
+    // 新等级体系：Lv = 分数（一分一级）+ 荣誉称号 + 渐变颜色
+    const rankInfo = getRankInfo(total);
+    const rank = `Lv.${rankInfo.lv}`;
+    const color = rankInfo.color;
+    const title = rankInfo.title;
 
     // 生成歌曲得分明细的UI
     const phraseDetails = phraseScores.length > 0 ? (
@@ -1271,7 +1429,10 @@ export default function Home() {
     const card = (
       <div key={data.students.length} className="student-card" style={{ borderLeftColor: color }}>
         <div className="card-top">
-          <div className="stu-name">{name} <span className="rank-badge" style={{ background: color }}>{rank}</span></div>
+          <div className="stu-name">
+            {name} <span className="rank-badge" style={{ background: color }}>{rank}</span>
+            <span className="rank-title" style={{ color }}>{title}</span>
+          </div>
           <div className="stu-total" style={{ color: color }}>{total}</div>
         </div>
         <div className="dim-bars">
@@ -1292,6 +1453,7 @@ export default function Home() {
           </div>
         </div>
         <div className="pro-comment">
+          <div className="comment-item"><span className="c-label">🏆 总评:</span><span>{comments.overall}</span></div>
           <div className="comment-item"><span className="c-label">🎵 音准:</span><span>{comments.pitch}</span></div>
           <div className="comment-item"><span className="c-label">🥁 节奏:</span><span>{comments.rhythm}</span></div>
           <div className="comment-item"><span className="c-label">❤️ 情绪:</span><span>{comments.emotion}</span></div>
@@ -1312,6 +1474,7 @@ export default function Home() {
       emotion: e,
       rank,
       rankColor: color,
+      rankTitle: title,
       comments,
       phraseScores,
       sampleData // 保存采样数据用于演唱画像
@@ -1597,7 +1760,10 @@ export default function Home() {
             const card = (
               <div key={newCards.length} className="student-card" style={{ borderLeftColor: score.rankColor }}>
                 <div className="card-top">
-                  <div className="stu-name">{score.name} <span className="rank-badge" style={{ background: score.rankColor }}>{score.rank}</span></div>
+                  <div className="stu-name">
+                    {score.name} <span className="rank-badge" style={{ background: score.rankColor }}>{score.rank}</span>
+                    {score.rankTitle && <span className="rank-title" style={{ color: score.rankColor }}>{score.rankTitle}</span>}
+                  </div>
                   <div className="stu-total" style={{ color: score.rankColor }}>{score.total}</div>
                 </div>
                 <div className="dim-bars">
@@ -1618,6 +1784,9 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="pro-comment">
+                  {score.comments.overall && (
+                    <div className="comment-item"><span className="c-label">🏆 总评:</span><span>{score.comments.overall}</span></div>
+                  )}
                   <div className="comment-item"><span className="c-label">🎵 音准:</span><span>{score.comments.pitch}</span></div>
                   <div className="comment-item"><span className="c-label">🥁 节奏:</span><span>{score.comments.rhythm}</span></div>
                   <div className="comment-item"><span className="c-label">❤️ 情绪:</span><span>{score.comments.emotion}</span></div>
