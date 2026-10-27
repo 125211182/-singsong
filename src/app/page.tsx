@@ -7,7 +7,7 @@ import SingingPortrait from '@/components/SingingPortrait';
 const CONFIG = {
   scrollSpeed: 100,
   analyzePrecision: 0.05,
-  tolerance: 1.5, // 容错值（半音）：1.5 个半音以内判为命中，保证评分区分度
+  tolerance: 1.8, // 容错值（半音）：配合自动时间对齐，兼顾区分度与课堂宽容度
   minVol: 0.015   // 降低音量阈值，更容易检测
 };
 
@@ -661,25 +661,104 @@ export default function Home() {
     const melodyData = appDataRef.current.melodyData;
 
     // ========== 音准评分（50%）==========
-    // 1. 命中率（60%权重）
-    const rawAccuracy = stats.frames > 0 ? stats.hits / stats.frames : 0;
+    // 0. 演唱时间轴自动对齐：
+    //    范唱播放/开口早晚与点击"开始"之间存在误差，直接在原始时间轴上判定会系统性扣分。
+    //    在 ±4s 内以 0.05s 步长搜索使命中数最大的时间偏移，先对齐整条演唱时间轴再评分。
+    //    对齐后演唱画像、乐句分析也随之校正。
+    const NOTE_WINDOW = 5 / CONFIG.scrollSpeed; // 与实时判定口径一致（±0.05s 内视为同一音符）
+    const voicedSamples = stats.sampleData.filter(
+      (s): s is SampleData & { midi: number } => s.hasPitch && typeof s.midi === 'number'
+    );
+    const melTimes = melodyData.map(p => p.time);
+
+    const findNoteAt = (t: number): MelodyPoint | undefined => {
+      if (melTimes.length === 0) return undefined;
+      let lo = 0, hi = melTimes.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (melTimes[mid] < t) lo = mid + 1; else hi = mid;
+      }
+      let best: MelodyPoint | undefined;
+      let bestDist = Infinity;
+      for (const idx of [lo, lo - 1]) {
+        if (idx >= 0 && idx < melodyData.length) {
+          const d = Math.abs(melTimes[idx] - t);
+          if (d < bestDist) { bestDist = d; best = melodyData[idx]; }
+        }
+      }
+      return bestDist <= NOTE_WINDOW ? best : undefined;
+    };
+
+    let alignedFrames = 0;
+    let alignedHits = 0;
+    let alignedDiffSum = 0;
+
+    if (voicedSamples.length >= 20 && melodyData.length > 0) {
+      // 搜索最佳时间偏移（正数 = 开口比旋律晚）
+      let bestOffset = 0;
+      let bestHits = -1;
+      let bestNoteFrames = -1;
+      for (let offset = -4; offset <= 4.0001; offset += 0.05) {
+        let hits = 0, noteFrames = 0;
+        for (const s of voicedSamples) {
+          const note = findNoteAt(s.time - offset);
+          if (!note) continue;
+          noteFrames++;
+          const oct = 12 * Math.round((note.midi - s.midi) / 12);
+          const nd = Math.abs(note.midi - (s.midi + oct));
+          if (nd < CONFIG.tolerance) hits++;
+        }
+        if (hits > bestHits || (hits === bestHits && noteFrames > bestNoteFrames)) {
+          bestHits = hits;
+          bestNoteFrames = noteFrames;
+          bestOffset = offset;
+        }
+      }
+
+      // 应用偏移，校正整条演唱时间轴
+      if (Math.abs(bestOffset) > 0.0001) {
+        for (const s of stats.sampleData) s.time -= bestOffset;
+      }
+
+      // 对齐后逐帧重算命中与偏差，并回写 sampleData（乐句评分同步受益）
+      for (const s of voicedSamples) {
+        const note = findNoteAt(s.time);
+        if (!note) {
+          // 旋律上此处无音符（前奏/间奏/换气），不计入命中率分母
+          s.isHit = false;
+          s.pitchDiff = 0;
+          continue;
+        }
+        alignedFrames++;
+        const oct = 12 * Math.round((note.midi - s.midi) / 12);
+        const nd = Math.abs(note.midi - (s.midi + oct));
+        s.pitchDiff = nd;
+        s.isHit = nd < CONFIG.tolerance;
+        alignedDiffSum += nd;
+        if (s.isHit) alignedHits++;
+      }
+    }
+
+    // 1. 命中率（60%权重）：分母只统计旋律上有音符的帧
+    const rawAccuracy = alignedFrames > 0 ? alignedHits / alignedFrames : 0;
     let accuracyScore = rawAccuracy * 60;
 
     // 2. 音高偏差（40%权重）
-    const avgDiff = stats.frames > 0 ? stats.diffSum / stats.frames : 0;
+    const avgDiff = alignedFrames > 0 ? alignedDiffSum / alignedFrames : 0;
     let precisionScore = 0;
-    if (avgDiff <= 0.5) precisionScore = 40;      // 非常精准
-    else if (avgDiff <= 0.8) precisionScore = 36; // 很好
-    else if (avgDiff <= 1.2) precisionScore = 32; // 不错
-    else if (avgDiff <= 1.8) precisionScore = 26; // 一般
-    else if (avgDiff <= 2.5) precisionScore = 20; // 较差
+    if (avgDiff <= 0.7) precisionScore = 40;      // 非常精准
+    else if (avgDiff <= 1.0) precisionScore = 36; // 很好
+    else if (avgDiff <= 1.4) precisionScore = 32; // 不错
+    else if (avgDiff <= 2.0) precisionScore = 26; // 一般
+    else if (avgDiff <= 3.0) precisionScore = 20; // 较差
     else precisionScore = 12;                     // 很差
 
-    // 综合音准分
-    let scorePitch = Math.round(accuracyScore + precisionScore);
-
-    // 最高不超过100，最低30（保留基本鼓励分，但拉开差距）
-    scorePitch = Math.min(100, Math.max(30, scorePitch));
+    // 综合音准分（有效音高帧过少视为未演唱，直接给下限分）
+    let scorePitch = 30;
+    if (alignedFrames >= 10) {
+      scorePitch = Math.round(accuracyScore + precisionScore);
+      scorePitch = Math.min(100, Math.max(30, scorePitch));
+    }
 
     // ========== 节奏评分（30%）- 专业版 ==========
     const teacherTotal = melodyData.length;
@@ -997,11 +1076,11 @@ export default function Home() {
           const accuracy = pitchHits / pitchFrames;
           let accuracyScore = accuracy * 60;
           let precisionScore = 0;
-          if (pitchAvgDiff <= 0.5) precisionScore = 40;
-          else if (pitchAvgDiff <= 0.8) precisionScore = 36;
-          else if (pitchAvgDiff <= 1.2) precisionScore = 32;
-          else if (pitchAvgDiff <= 1.8) precisionScore = 26;
-          else if (pitchAvgDiff <= 2.5) precisionScore = 20;
+          if (pitchAvgDiff <= 0.7) precisionScore = 40;
+          else if (pitchAvgDiff <= 1.0) precisionScore = 36;
+          else if (pitchAvgDiff <= 1.4) precisionScore = 32;
+          else if (pitchAvgDiff <= 2.0) precisionScore = 26;
+          else if (pitchAvgDiff <= 3.0) precisionScore = 20;
           else precisionScore = 12;
           phrasePitchScore = Math.min(100, Math.max(30, accuracyScore + precisionScore));
         }
