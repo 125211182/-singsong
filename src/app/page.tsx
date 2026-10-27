@@ -7,7 +7,7 @@ import SingingPortrait from '@/components/SingingPortrait';
 const CONFIG = {
   scrollSpeed: 100,
   analyzePrecision: 0.05,
-  tolerance: 2.2, // 容错值（提高到2.2，更宽松）
+  tolerance: 1.5, // 容错值（半音）：1.5 个半音以内判为命中，保证评分区分度
   minVol: 0.015   // 降低音量阈值，更容易检测
 };
 
@@ -668,18 +668,18 @@ export default function Home() {
     // 2. 音高偏差（40%权重）
     const avgDiff = stats.frames > 0 ? stats.diffSum / stats.frames : 0;
     let precisionScore = 0;
-    if (avgDiff <= 0.8) precisionScore = 40;      // 非常精准
-    else if (avgDiff <= 1.2) precisionScore = 35; // 很好
-    else if (avgDiff <= 1.8) precisionScore = 30; // 不错
-    else if (avgDiff <= 2.5) precisionScore = 25; // 一般
-    else if (avgDiff <= 3.5) precisionScore = 20; // 较差
-    else precisionScore = 15;                     // 很差
+    if (avgDiff <= 0.5) precisionScore = 40;      // 非常精准
+    else if (avgDiff <= 0.8) precisionScore = 36; // 很好
+    else if (avgDiff <= 1.2) precisionScore = 32; // 不错
+    else if (avgDiff <= 1.8) precisionScore = 26; // 一般
+    else if (avgDiff <= 2.5) precisionScore = 20; // 较差
+    else precisionScore = 12;                     // 很差
 
     // 综合音准分
     let scorePitch = Math.round(accuracyScore + precisionScore);
 
-    // 最高不超过100，最低不低于50
-    scorePitch = Math.min(100, Math.max(50, scorePitch));
+    // 最高不超过100，最低30（保留基本鼓励分，但拉开差距）
+    scorePitch = Math.min(100, Math.max(30, scorePitch));
 
     // ========== 节奏评分（30%）- 专业版 ==========
     const teacherTotal = melodyData.length;
@@ -780,30 +780,30 @@ export default function Home() {
     // 节奏评分 = 完成度(50%) + 节拍稳定性(25%) + 时值准确性(20%) + 起音收音(5%)
     const scoreRhythm = Math.min(100, completionScore + rhythmStability + noteAccuracy + articulation);
 
-    // ========== 情绪评分（20%）- 专业版 ==========
+    // ========== 情绪评分（20%）==========
+    // 无基础保底分：音量(30) + 动态范围(30) + 连贯性(25) + 气息(15)，满分 100
     if (studentVol.length === 0) {
       return;
     }
 
-    // 计算各项指标
+    // 计算各项指标（基于发声帧，rms > 0.01）
     const volMean = studentVol.reduce((a, b) => a + b, 0) / studentVol.length;
     const volMin = Math.min(...studentVol);
     const volMax = Math.max(...studentVol);
     const dynamicRange = volMax - volMin;
     const volStd = Math.sqrt(studentVol.reduce((a, b) => a + Math.pow(b - volMean, 2), 0) / studentVol.length);
 
-    // 连贯性分析：声音是否流畅，是否有断音
-    let smoothnessScore = 0;
+    // 连贯性分析：studentVol 只含发声帧，停顿必须从完整采样（含静音帧）统计
+    const allSamples = stats.sampleData;
     let pauseCount = 0;
-    for (let i = 1; i < studentVol.length; i++) {
-      if (studentVol[i] < 0.01 && studentVol[i - 1] >= 0.01) {
+    for (let i = 1; i < allSamples.length; i++) {
+      if (allSamples[i].volume < 0.01 && allSamples[i - 1].volume >= 0.01) {
         pauseCount++;
       }
     }
-    const pauseRatio = pauseCount / (studentVol.length / 50); // 每秒的停顿次数
+    const pauseRatio = pauseCount / (studentVol.length / 50); // 每秒发声的停顿次数
 
     // 气息控制分析：音量持续能力和稳定性
-    let breathControl = 0;
     let sustainSegments = 0;
     let currentSegment = 0;
     for (let i = 0; i < studentVol.length; i++) {
@@ -818,87 +818,80 @@ export default function Home() {
     }
     const sustainRatio = sustainSegments / (studentVol.length / 20);
 
-    // 基础分
-    let scoreEmotion = 50;
-
-    // 音量评分（35分权重）
+    // 音量评分（30分权重）
     let volScore = 0;
-    if (volMean >= 0.05) volScore = 35;           // 音量很充足
-    else if (volMean >= 0.04) volScore = 33;      // 音量充足
-    else if (volMean >= 0.03) volScore = 30;      // 音量较好
-    else if (volMean >= 0.02) volScore = 25;      // 音量适中
-    else if (volMean >= 0.015) volScore = 20;     // 音量偏小
-    else volScore = 15;                            // 音量太小
+    if (volMean >= 0.06) volScore = 30;           // 音量很充足
+    else if (volMean >= 0.045) volScore = 27;     // 音量充足
+    else if (volMean >= 0.035) volScore = 24;     // 音量较好
+    else if (volMean >= 0.025) volScore = 20;     // 音量适中
+    else if (volMean >= 0.018) volScore = 16;     // 音量偏小
+    else if (volMean >= 0.012) volScore = 12;     // 音量小
+    else volScore = 8;                             // 音量太小
 
-    scoreEmotion += volScore;
-
-    // 动态范围评分（25分权重）
+    // 动态范围评分（30分权重）
     let dynamicScore = 0;
-    if (dynamicRange >= 0.06) dynamicScore = 25;   // 动态范围很大
-    else if (dynamicRange >= 0.05) dynamicScore = 23;
-    else if (dynamicRange >= 0.04) dynamicScore = 21;
-    else if (dynamicRange >= 0.03) dynamicScore = 18;
-    else if (dynamicRange >= 0.02) dynamicScore = 15;
-    else dynamicScore = 12;                        // 动态范围小
-
-    scoreEmotion += dynamicScore;
+    if (dynamicRange >= 0.12) dynamicScore = 30;   // 动态范围很大
+    else if (dynamicRange >= 0.09) dynamicScore = 27;
+    else if (dynamicRange >= 0.07) dynamicScore = 24;
+    else if (dynamicRange >= 0.05) dynamicScore = 20;
+    else if (dynamicRange >= 0.03) dynamicScore = 16;
+    else if (dynamicRange >= 0.02) dynamicScore = 12;
+    else dynamicScore = 8;                         // 动态范围小
 
     // 连贯性评分（25分权重）
+    let smoothnessScore = 0;
     if (pauseRatio < 0.1) smoothnessScore = 25;    // 非常连贯
-    else if (pauseRatio < 0.3) smoothnessScore = 23;
-    else if (pauseRatio < 0.5) smoothnessScore = 20;
-    else if (pauseRatio < 0.8) smoothnessScore = 17;
-    else if (pauseRatio < 1.2) smoothnessScore = 15;
-    else smoothnessScore = 12;                     // 断音过多
-
-    scoreEmotion += smoothnessScore;
+    else if (pauseRatio < 0.3) smoothnessScore = 22;
+    else if (pauseRatio < 0.5) smoothnessScore = 19;
+    else if (pauseRatio < 0.8) smoothnessScore = 15;
+    else if (pauseRatio < 1.2) smoothnessScore = 11;
+    else smoothnessScore = 7;                      // 断音过多
 
     // 气息控制评分（15分权重）
+    let breathControl = 0;
     if (sustainRatio > 0.6) breathControl = 15;    // 气息控制很好
     else if (sustainRatio > 0.5) breathControl = 13;
     else if (sustainRatio > 0.4) breathControl = 11;
     else if (sustainRatio > 0.3) breathControl = 9;
     else breathControl = 7;                         // 气息不足
 
-    scoreEmotion += breathControl;
-
-    // 最高不超过100，最低不低于50
-    scoreEmotion = Math.min(100, Math.max(50, scoreEmotion));
+    // 情绪总分（最低 20 分兜底，无 50 分保底）
+    const scoreEmotion = Math.min(100, Math.max(20, volScore + dynamicScore + smoothnessScore + breathControl));
 
     // ========== 综合评分 ==========
     let total = Math.round(scorePitch * 0.5 + scoreRhythm * 0.3 + scoreEmotion * 0.2);
 
-    // 鼓励性调整（V8.9 精准版）
-    // 只在演唱完成度较高时才给予高分保底，避免只唱几句也得高分
+    // 鼓励性调整（保底降温版）
+    // 只在演唱完成度较高时给予适度保底，兜住"完整唱完"的底，但不掩盖单项差异
     if (completion >= 0.8) {
       // 演唱完成度80%以上（完整演唱）
       if (scorePitch >= 85 && scoreEmotion >= 85) {
-        total = Math.max(total, 95);
+        total = Math.max(total, 88);
       }
       if (scorePitch >= 80 && scoreEmotion >= 80) {
-        total = Math.max(total, 90);
+        total = Math.max(total, 83);
       }
-      if (scoreRhythm >= 80 && total < 90) {
-        total = 90;
+      if (scoreRhythm >= 80 && total < 78) {
+        total = 78;
       }
-      if (scoreRhythm >= 70 && total < 85) {
-        total = 85;
+      if (scoreRhythm >= 70 && total < 73) {
+        total = 73;
       }
     } else if (completion >= 0.7) {
       // 演唱完成度70%以上（基本完整）
       if (scorePitch >= 85 && scoreEmotion >= 85) {
-        total = Math.max(total, 90);
+        total = Math.max(total, 82);
       }
       if (scorePitch >= 80 && scoreEmotion >= 80) {
-        total = Math.max(total, 85);
+        total = Math.max(total, 77);
       }
-      if (scoreRhythm >= 65 && total < 80) {
-        total = 80;
+      if (scoreRhythm >= 65 && total < 72) {
+        total = 72;
       }
     } else if (completion >= 0.5) {
       // 演唱完成度50%以上（一般）
       if (scorePitch >= 80 && scoreEmotion >= 80) {
-        total = Math.max(total, 75);
+        total = Math.max(total, 68);
       }
     }
     // 完成度低于50%的不给予额外保底
@@ -999,18 +992,18 @@ export default function Home() {
           ? pitchSamples.reduce((sum, s) => sum + (s.pitchDiff || 0), 0) / pitchSamples.length
           : 0;
 
-        let phrasePitchScore = 50;
+        let phrasePitchScore = 40;
         if (pitchFrames > 0) {
           const accuracy = pitchHits / pitchFrames;
           let accuracyScore = accuracy * 60;
           let precisionScore = 0;
-          if (pitchAvgDiff <= 0.8) precisionScore = 40;
-          else if (pitchAvgDiff <= 1.2) precisionScore = 35;
-          else if (pitchAvgDiff <= 1.8) precisionScore = 30;
-          else if (pitchAvgDiff <= 2.5) precisionScore = 25;
-          else if (pitchAvgDiff <= 3.5) precisionScore = 20;
-          else precisionScore = 15;
-          phrasePitchScore = Math.min(100, Math.max(50, accuracyScore + precisionScore));
+          if (pitchAvgDiff <= 0.5) precisionScore = 40;
+          else if (pitchAvgDiff <= 0.8) precisionScore = 36;
+          else if (pitchAvgDiff <= 1.2) precisionScore = 32;
+          else if (pitchAvgDiff <= 1.8) precisionScore = 26;
+          else if (pitchAvgDiff <= 2.5) precisionScore = 20;
+          else precisionScore = 12;
+          phrasePitchScore = Math.min(100, Math.max(30, accuracyScore + precisionScore));
         }
 
         // 节奏评分
@@ -1018,7 +1011,7 @@ export default function Home() {
         const totalDuration = sampleData.length * sampleInterval;
         const phraseCompletion = totalDuration > 0 ? phraseDuration / totalDuration : 0;
 
-        let phraseRhythmScore = 50;
+        let phraseRhythmScore = 40;
         if (phraseSamples.length > 10) {
           const volSmoothness = phraseSamples.reduce((sum, s, idx) => {
             if (idx === 0) return 0;
@@ -1026,28 +1019,29 @@ export default function Home() {
           }, 0) / (phraseSamples.length - 1);
 
           let rhythmStabilityScore = 0;
-          if (volSmoothness < 0.003) rhythmStabilityScore = 25;
-          else if (volSmoothness < 0.005) rhythmStabilityScore = 23;
-          else if (volSmoothness < 0.008) rhythmStabilityScore = 21;
-          else if (volSmoothness < 0.012) rhythmStabilityScore = 19;
-          else if (volSmoothness < 0.018) rhythmStabilityScore = 17;
-          else rhythmStabilityScore = 12;
+          if (volSmoothness < 0.003) rhythmStabilityScore = 50;
+          else if (volSmoothness < 0.005) rhythmStabilityScore = 45;
+          else if (volSmoothness < 0.008) rhythmStabilityScore = 40;
+          else if (volSmoothness < 0.012) rhythmStabilityScore = 34;
+          else if (volSmoothness < 0.018) rhythmStabilityScore = 28;
+          else rhythmStabilityScore = 20;
 
           const phraseVol = phraseSamples.map(s => s.volume);
           const phraseVolMean = phraseVol.reduce((a, b) => a + b, 0) / phraseVol.length;
           const phraseDynamicRange = Math.max(...phraseVol) - Math.min(...phraseVol);
 
           let dynamicScore = 0;
-          if (phraseDynamicRange >= 0.05) dynamicScore = 15;
-          else if (phraseDynamicRange >= 0.04) dynamicScore = 13;
-          else if (phraseDynamicRange >= 0.03) dynamicScore = 11;
-          else dynamicScore = 8;
+          if (phraseDynamicRange >= 0.05) dynamicScore = 35;
+          else if (phraseDynamicRange >= 0.04) dynamicScore = 30;
+          else if (phraseDynamicRange >= 0.03) dynamicScore = 25;
+          else if (phraseDynamicRange >= 0.02) dynamicScore = 18;
+          else dynamicScore = 12;
 
-          phraseRhythmScore = Math.min(100, rhythmStabilityScore + dynamicScore + 10);
+          phraseRhythmScore = Math.min(100, rhythmStabilityScore + dynamicScore + 15);
         }
 
-        // 情绪评分
-        let phraseEmotionScore = 50;
+        // 情绪评分（音量35 + 动态35 + 连贯30，满分100）
+        let phraseEmotionScore = 40;
         if (phraseSamples.length > 10) {
           const phraseVol = phraseSamples.map(s => s.volume);
           const phraseVolMean = phraseVol.reduce((a, b) => a + b, 0) / phraseVol.length;
@@ -1056,19 +1050,21 @@ export default function Home() {
           const phraseDynamicRange = phraseVolMax - phraseVolMin;
 
           let volScore = 0;
-          if (phraseVolMean >= 0.05) volScore = 35;
-          else if (phraseVolMean >= 0.04) volScore = 33;
-          else if (phraseVolMean >= 0.03) volScore = 30;
-          else if (phraseVolMean >= 0.02) volScore = 25;
-          else if (phraseVolMean >= 0.015) volScore = 20;
-          else volScore = 15;
+          if (phraseVolMean >= 0.06) volScore = 35;
+          else if (phraseVolMean >= 0.045) volScore = 31;
+          else if (phraseVolMean >= 0.035) volScore = 27;
+          else if (phraseVolMean >= 0.025) volScore = 22;
+          else if (phraseVolMean >= 0.018) volScore = 17;
+          else if (phraseVolMean >= 0.012) volScore = 12;
+          else volScore = 8;
 
           let dynamicScore = 0;
-          if (phraseDynamicRange >= 0.06) dynamicScore = 25;
-          else if (phraseDynamicRange >= 0.05) dynamicScore = 23;
-          else if (phraseDynamicRange >= 0.04) dynamicScore = 21;
-          else if (phraseDynamicRange >= 0.03) dynamicScore = 18;
-          else dynamicScore = 12;
+          if (phraseDynamicRange >= 0.10) dynamicScore = 35;
+          else if (phraseDynamicRange >= 0.08) dynamicScore = 31;
+          else if (phraseDynamicRange >= 0.06) dynamicScore = 27;
+          else if (phraseDynamicRange >= 0.04) dynamicScore = 22;
+          else if (phraseDynamicRange >= 0.025) dynamicScore = 17;
+          else dynamicScore = 10;
 
           let pauseCount = 0;
           for (let j = 1; j < phraseSamples.length; j++) {
@@ -1079,11 +1075,11 @@ export default function Home() {
           const pauseRatio = pauseCount / (phraseSamples.length / 50);
 
           let smoothnessScore = 0;
-          if (pauseRatio < 0.1) smoothnessScore = 25;
-          else if (pauseRatio < 0.3) smoothnessScore = 23;
-          else if (pauseRatio < 0.5) smoothnessScore = 20;
+          if (pauseRatio < 0.1) smoothnessScore = 30;
+          else if (pauseRatio < 0.3) smoothnessScore = 26;
+          else if (pauseRatio < 0.5) smoothnessScore = 22;
           else if (pauseRatio < 0.8) smoothnessScore = 17;
-          else smoothnessScore = 12;
+          else smoothnessScore = 10;
 
           phraseEmotionScore = Math.min(100, volScore + dynamicScore + smoothnessScore);
         }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useMemo } from 'react';
 
 interface SampleData {
   time: number;
@@ -35,25 +35,18 @@ const midiToNoteName = (midi: number): string => {
 export default function SingingPortrait({ sampleData, melodyData, tolerance, studentName }: SingingPortraitProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [canvasWidth, setCanvasWidth] = useState(800);
   const [canvasHeight, setCanvasHeight] = useState(300);
 
   // 宽度随歌曲时长动态计算（每秒 50px，超出可横向滚动）
-  useEffect(() => {
-    if (!sampleData || sampleData.length === 0) return;
-
-    const allTimes = [
+  // 宽度安全上限：backing store = 宽 × DPR(上限1.5)，需低于老显卡 8192 纹理上限
+  // 5400 × 1.5 = 8100 < 8192，约 108 秒内仍保持 50px/秒的舒展比例
+  const canvasWidth = useMemo(() => {
+    if (!sampleData || sampleData.length === 0) return 800;
+    const maxTime = Math.max(
       ...sampleData.map(s => s.time),
       ...melodyData.map(m => m.time)
-    ];
-    const maxTime = Math.max(...allTimes);
-
-    const pixelsPerSecond = 50;
-    const minWidth = 800;
-    // 宽度安全上限：backing store = 宽 × DPR(上限1.5)，需低于老显卡 8192 纹理上限
-    // 5400 × 1.5 = 8100 < 8192，约 108 秒内仍保持 50px/秒的舒展比例
-    const maxWidth = 5400;
-    setCanvasWidth(Math.min(maxWidth, Math.max(minWidth, maxTime * pixelsPerSecond)));
+    );
+    return Math.min(5400, Math.max(800, maxTime * 50));
   }, [sampleData, melodyData]);
 
   // 高度跟随容器，填满所在区域（监听容器尺寸变化）
@@ -66,17 +59,24 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
       if (h > 0) setCanvasHeight(h);
     };
 
-    updateHeight();
+    // 初次测量异步执行，避免在 effect 体内同步 setState
+    const rafId = requestAnimationFrame(updateHeight);
 
     // 旧浏览器内核（如老 Edge/嵌入式浏览器）不支持 ResizeObserver 时降级为监听窗口缩放
     if (typeof ResizeObserver !== 'undefined') {
       const observer = new ResizeObserver(updateHeight);
       observer.observe(container);
-      return () => observer.disconnect();
+      return () => {
+        cancelAnimationFrame(rafId);
+        observer.disconnect();
+      };
     }
 
     window.addEventListener('resize', updateHeight);
-    return () => window.removeEventListener('resize', updateHeight);
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', updateHeight);
+    };
   }, []);
 
   // 绘制画像
