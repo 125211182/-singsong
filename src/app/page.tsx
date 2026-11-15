@@ -3,140 +3,14 @@
 import { useEffect, useRef, useState } from 'react';
 import SingingPortrait from '@/components/SingingPortrait';
 
-// ================= 配置 (V8.3 暖心版参数) =================
-const CONFIG = {
-  scrollSpeed: 100,
-  analyzePrecision: 0.05,
-  tolerance: 1.8, // 容错值（半音）：配合自动时间对齐，兼顾区分度与课堂宽容度
-  minVol: 0.015   // 降低音量阈值，更容易检测
-};
+import { detectPitch, extractPitchTrack, insufficientSingingEvidence, PITCH_HOP_SECONDS,
+  PITCH_WINDOW_SECONDS, type PitchFrame, type SingingOctaveCalibration, type SingingPitchPair } from '@/lib/singing-evidence';
+import { getLivePitchDisplay, getLivePitchRange, inferLiveSingingOctave, livePitchY, LIVE_PITCH_STATUS_TEXT } from '@/lib/singing-live-pitch';
+import { buildRecordedFeedback } from '@/lib/recorded-feedback';
 
-// ================= 等级体系（一分一级 + 荣誉称号）=================
-interface RankInfo {
-  lv: number;           // 等级 = 总分（一分一级）
-  title: string;        // 荣誉称号
-  color: string;        // 随分数渐变的颜色
-  nextTitle?: string;   // 下一称号
-  nextTitleAt?: number; // 晋升下一称号所需分数
-}
-
-// 称号表（从高到低，命中第一个 min <= score 的称号）
-const RANK_TIERS: { min: number; title: string }[] = [
-  { min: 100, title: '天籁传奇' },
-  { min: 97, title: '殿堂歌者' },
-  { min: 94, title: '金牌唱将' },
-  { min: 91, title: '舞台之星' },
-  { min: 88, title: '实力唱将' },
-  { min: 85, title: '闪耀新星' },
-  { min: 82, title: '进阶达人' },
-  { min: 79, title: '潜力唱将' },
-  { min: 76, title: '稳定发挥' },
-  { min: 73, title: '渐入佳境' },
-  { min: 70, title: '稳步提升' },
-  { min: 65, title: '崭露头角' },
-  { min: 60, title: '勤学新星' },
-  { min: 55, title: '勇敢开嗓' },
-  { min: 0, title: '加油起步' },
-];
-
-// 颜色随分数渐变：红 → 橙 → 蓝 → 绿 → 金（每一分颜色都略有不同）
-const getRankColor = (score: number): string => {
-  const stops: [number, number, number, number][] = [
-    [0, 255, 107, 107],
-    [55, 255, 69, 58],
-    [62, 255, 159, 10],
-    [70, 10, 132, 255],
-    [82, 48, 209, 88],
-    [94, 255, 214, 10],
-    [100, 255, 233, 130],
-  ];
-  const s = Math.max(0, Math.min(100, score));
-  for (let i = 0; i < stops.length - 1; i++) {
-    const [s0, r0, g0, b0] = stops[i];
-    const [s1, r1, g1, b1] = stops[i + 1];
-    if (s >= s0 && s <= s1) {
-      const t = (s - s0) / (s1 - s0);
-      return `rgb(${Math.round(r0 + (r1 - r0) * t)}, ${Math.round(g0 + (g1 - g0) * t)}, ${Math.round(b0 + (b1 - b0) * t)})`;
-    }
-  }
-  return 'rgb(255, 233, 130)';
-};
-
-const getRankInfo = (score: number): RankInfo => {
-  const idx = RANK_TIERS.findIndex(t => score >= t.min);
-  const tier = idx >= 0 ? RANK_TIERS[idx] : RANK_TIERS[RANK_TIERS.length - 1];
-  const next = idx > 0 ? RANK_TIERS[idx - 1] : undefined;
-  return {
-    lv: score,
-    title: tier.title,
-    color: getRankColor(score),
-    nextTitle: next?.title,
-    nextTitleAt: next?.min,
-  };
-};
-
-// 称号专属评语库（每个称号 1~2 条，总评还会嵌入具体分数与晋升提示，保证每级评语都不同）
-const TITLE_COMMENTS: Record<string, string[]> = {
-  '天籁传奇': [
-    '满分传奇！无可挑剔的完美演唱，已达专业歌唱家水准！',
-  ],
-  '殿堂歌者': [
-    '殿堂级表现！距离满分传奇仅一步之遥，音色与控制力令人惊艳！',
-    '歌者风范！整体完成度接近完美，每一个音符都在掌控之中！',
-  ],
-  '金牌唱将': [
-    '金牌水准！音准、节奏、情感全面在线，是大家学习的榜样！',
-    '唱将实力！整场演唱稳定而精彩，细节处理非常到位！',
-  ],
-  '舞台之星': [
-    '舞台表现力出众！声音自信、表达流畅，已具备登台演唱的实力！',
-    '星光闪耀！演唱完整而富有感染力，继续保持这份舞台感！',
-  ],
-  '实力唱将': [
-    '实力在线！演唱稳定扎实，距离舞台之星只有细微差距！',
-    '唱将潜质！整体表现优秀，再打磨细节就更出彩！',
-  ],
-  '闪耀新星': [
-    '新星闪耀！演唱完整流畅，声音里透着自信的光芒！',
-    '表现出色！各维度均衡发展，继续保持稳步上升！',
-  ],
-  '进阶达人': [
-    '进阶有方！演唱完成度很好，技巧正在快速提升！',
-    '达人之路！整体表现良好，细节打磨后会更上一层楼！',
-  ],
-  '潜力唱将': [
-    '潜力十足！演唱有不少亮点，继续挖掘声音的可能性！',
-    '唱将潜质！基础扎实，加强稳定性会有质的飞跃！',
-  ],
-  '稳定发挥': [
-    '发挥稳定！完整唱完全曲，保持良好的演唱状态！',
-    '稳稳当当！整体表现可圈可点，继续向更高目标迈进！',
-  ],
-  '渐入佳境': [
-    '渐入佳境！演唱越来越顺，继续保持这份进步势头！',
-    '状态渐好！多数段落表现不错，整体性还可再提升！',
-  ],
-  '稳步提升': [
-    '稳步提升中！已经完成演唱，每个细节的进步都值得肯定！',
-    '提升明显！继续练习，音准和节奏会越来越稳！',
-  ],
-  '崭露头角': [
-    '崭露头角！已经展现出不俗的演唱感觉，继续加油！',
-    '初露锋芒！基础已经打牢，向更高分数冲刺吧！',
-  ],
-  '勤学新星': [
-    '勤学进步！完整参与演唱就是最大的收获，继续努力！',
-    '新星启程！坚持练习音准和节奏，进步会肉眼可见！',
-  ],
-  '勇敢开嗓': [
-    '勇敢开嗓！敢于完整演唱就值得点赞，多听多唱会更棒！',
-    '勇气可嘉！跟着范唱多练几遍，下次一定会更好！',
-  ],
-  '加油起步': [
-    '加油起步！别灰心，先跟着范唱慢慢找感觉，你一定行！',
-    '迈出第一步最重要！建议分段练习，一小节一小节来！',
-  ],
-};
+const SCROLL_SPEED = 100;
+const PITCH_TOLERANCE = 0.6;
+const RECORDING_LEAD_SECONDS = 0.1;
 
 // ================= 类型定义 =================
 interface MelodyPoint {
@@ -161,19 +35,21 @@ interface PhraseScore {
   id: number;
   startTime: number;
   endTime: number;
-  pitch: number;
-  rhythm: number;
-  emotion: number;
+  pitch: number | null;
+  rhythm: number | null;
+  emotion: number | null;
 }
 
 // 学生完整评分数据（用于分享和恢复）
 interface StudentScoreData {
   name: string;
-  total: number;
-  pitch: number;
-  rhythm: number;
-  emotion: number;
-  rank: string;
+  total: number | null;
+  version?: string;
+  portraitReference?: MelodyPoint[];
+  pitch: number | null;
+  rhythm: number | null;
+  emotion: number | null;
+  rank?: string;
   rankColor: string;
   rankTitle?: string; // 荣誉称号（旧分享数据可能没有）
   comments: ScoreComments;
@@ -188,6 +64,7 @@ interface SampleData {
   volume: number;
   hasPitch: boolean;
   isHit: boolean;
+  tone?: 'hit' | 'miss' | 'pending';
   pitchDiff?: number;
   midi?: number; // 用户的实际 MIDI 值（用于演唱画像）
 }
@@ -200,19 +77,79 @@ interface AppData {
   melodyData: MelodyPoint[];
   isPlaying: boolean;
   startTime: number;
-  stats: {
-    frames: number;
-    hits: number;
-    diffSum: number;
-    teacherEnergy: number[];
-    studentVol: number[];
-    // 新增：采样点数据（用于乐句分析）
-    sampleData: SampleData[];
-  };
+  refTrack: PitchFrame[];
+  livePairs: SingingPitchPair[];
+  calibration: SingingOctaveCalibration;
+  lastLiveSlot: number;
+  busy: boolean;
   currentSource: AudioBufferSourceNode | null;
   recorder: MediaRecorder | null;
   chunks: Blob[];
   students: Student[];
+}
+
+const DIMENSIONS = [
+  { key: 'pitch', label: '音准', color: '#30d158' },
+  { key: 'rhythm', label: '节奏', color: '#0a84ff' },
+  { key: 'emotion', label: '情绪', color: '#ffd60a' },
+] as const;
+
+function renderStudentCard(score: StudentScoreData, key: number | string, audioUrl?: string) {
+  return (
+    <div key={key} className="student-card" style={{ borderLeftColor: score.rankColor }}>
+      <div className="card-top">
+        <div className="stu-name">
+          {score.name} {score.rank && <span className="rank-badge" style={{ background: score.rankColor }}>{score.rank}</span>}
+          {score.rankTitle && <span className="rank-title" style={{ color: score.rankColor }}>{score.rankTitle}</span>}
+        </div>
+        {score.total != null && <div className="stu-total" style={{ color: score.rankColor }}>{score.total}</div>}
+      </div>
+      <div className="dim-bars">
+        {DIMENSIONS.map(dimension => {
+          const value = score[dimension.key];
+          return (
+            <div className="dim-row" key={dimension.key}>
+              <span className="dim-label">{dimension.key === 'emotion' && score.version ? '强弱' : dimension.label}</span>
+              <div className="dim-track">{value != null && <div className="dim-fill" style={{ width: `${value}%`, background: dimension.color }} />}</div>
+              <span className="dim-score">{value ?? '待复核'}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="pro-comment">
+        {score.comments.overall && <div className="comment-item"><span>{score.comments.overall}</span></div>}
+        {DIMENSIONS.map(dimension => (
+          <div key={dimension.key} className="comment-item">
+            <span className="c-label">{dimension.key === 'emotion' && score.version ? '强弱处理' : dimension.label}</span>
+            <span>{score.comments[dimension.key]}</span>
+          </div>
+        ))}
+      </div>
+      {score.phraseScores?.length > 0 && (
+        <div className="phrase-details mt-3">
+          <div className="phrase-details-header">乐句参考 · {score.phraseScores.length} 个片段</div>
+          <div className="phrase-details-content">
+            {score.phraseScores.map(phrase => (
+              <div key={phrase.id} className="phrase-item">
+                <div className="phrase-time-badge">{phrase.startTime.toFixed(1)}–{phrase.endTime.toFixed(1)} 秒</div>
+                <div className="phrase-info">
+                  <div className="phrase-scores">
+                    {DIMENSIONS.map(dimension => (
+                      <div key={dimension.key} className="phrase-score-item">
+                        <span className="phrase-label">{dimension.key === 'emotion' && score.version ? '强弱' : dimension.label}</span>
+                        <span>{phrase[dimension.key] ?? '待复核'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {audioUrl && <audio controls src={audioUrl} />}
+    </div>
+  );
 }
 
 export default function Home() {
@@ -222,6 +159,7 @@ export default function Home() {
   const fileRefRef = useRef<HTMLInputElement>(null);
   const fileAccRef = useRef<HTMLInputElement>(null);
   const fileScoreRef = useRef<HTMLInputElement>(null);
+  const audioLoadingRef = useRef(false);
   const appDataRef = useRef<AppData>({
     ctx: null,
     analyser: null,
@@ -230,14 +168,11 @@ export default function Home() {
     melodyData: [],
     isPlaying: false,
     startTime: 0,
-    stats: {
-      frames: 0,
-      hits: 0,
-      diffSum: 0,
-      teacherEnergy: [],
-      studentVol: [],
-      sampleData: []
-    },
+    refTrack: [],
+    livePairs: [],
+    calibration: inferLiveSingingOctave([]),
+    lastLiveSlot: -1,
+    busy: false,
     currentSource: null,
     recorder: null,
     chunks: [],
@@ -251,6 +186,8 @@ export default function Home() {
   const [loadingText, setLoadingText] = useState('Processing...');
   const [studentCards, setStudentCards] = useState<React.ReactElement[]>([]);
   const [studentScoreData, setStudentScoreData] = useState<StudentScoreData[]>([]); // 存储评分数据用于分享
+  const [sessionBusy, setSessionBusy] = useState(false);
+  const [pairConfirmed, setPairConfirmed] = useState(false);
   const [accLoaded, setAccLoaded] = useState(false); // 伴奏是否已加载（用于触发UI更新）
   const [scoreImage, setScoreImage] = useState<string | null>(null);
   const [updateCounter, setUpdateCounter] = useState(0); // 用于触发 UI 更新
@@ -278,88 +215,23 @@ export default function Home() {
     }
   };
 
-  const getRMS = (buf: Float32Array): number => {
-    let sum = 0;
-    for (let i = 0; i < buf.length; i++) {
-      sum += buf[i] * buf[i];
-    }
-    return Math.sqrt(sum / buf.length);
-  };
-
-  const autoCorrelate = (buf: Float32Array, sr: number): number | null => {
-    const rms = getRMS(buf);
-    if (rms < 0.01) return null;
-
-    let size = buf.length;
-    let r1 = 0, r2 = size - 1, thres = 0.2;
-    for (let i = 0; i < size / 2; i++) {
-      if (Math.abs(buf[i]) < thres) { r1 = i; break; }
-    }
-    for (let i = 1; i < size / 2; i++) {
-      if (Math.abs(buf[size - i]) < thres) { r2 = size - i; break; }
-    }
-
-    buf = buf.slice(r1, r2);
-    size = buf.length;
-
-    let c = new Array(size).fill(0);
-    for (let i = 0; i < size; i++) {
-      for (let j = 0; j < size - i; j++) {
-        c[i] += buf[j] * buf[j + i];
-      }
-    }
-
-    let d = 0;
-    while (c[d] > c[d + 1]) d++;
-
-    let maxval = -1, maxpos = -1;
-    for (let i = d; i < size; i++) {
-      if (c[i] > maxval) { maxval = c[i]; maxpos = i; }
-    }
-
-    return sr / maxpos;
-  };
-
-  const freqToMidi = (f: number): number => {
-    return 69 + 12 * Math.log2(f / 440);
-  };
-
-  const getMidiY = (midi: number, h: number): number => {
-    return h - ((midi - 45) / (85 - 45)) * h;
-  };
-
-  const showLoading = (show: boolean, text: string = 'Processing...') => {
+  const showLoading = (show: boolean, text: string = '处理中…') => {
     setLoading(show);
     setLoadingText(text);
   };
 
-  // ================= 2. 旋律提取 =================
-  const extractMelody = (buffer: AudioBuffer): MelodyPoint[] => {
-    const data = buffer.getChannelData(0);
-    const sr = buffer.sampleRate;
-    const step = Math.floor(sr * CONFIG.analyzePrecision);
-    const result: MelodyPoint[] = [];
-
-    for (let i = 0; i < data.length; i += step) {
-      const slice = data.slice(i, i + 2048);
-      const rms = getRMS(slice);
-      if (rms > 0.015) {
-        const freq = autoCorrelate(slice, sr);
-        if (freq && freq > 60 && freq < 1100) {
-          result.push({
-            time: i / sr,
-            midi: freqToMidi(freq),
-            vol: rms
-          });
-        }
-      }
-    }
-    return result;
+  const setReference = (buffer: AudioBuffer) => {
+    const data = appDataRef.current;
+    data.refBuffer = buffer;
+    data.refTrack = extractPitchTrack({ samples: buffer.getChannelData(0), sampleRate: buffer.sampleRate });
+    data.melodyData = data.refTrack.flatMap(frame =>
+      frame.midi === null ? [] : [{ time: frame.time, midi: frame.midi, vol: frame.rms }]);
   };
 
   // ================= 3. 文件上传处理 =================
   const loadFile = async (file: File | null, type: 'ref' | 'acc') => {
-    if (!file) return;
+    if (!file || appDataRef.current.busy || audioLoadingRef.current) return;
+    audioLoadingRef.current = true;
 
     showLoading(true, '正在分析音频...');
     const ctx = appDataRef.current.ctx || new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -368,11 +240,10 @@ export default function Home() {
       const ab = await file.arrayBuffer();
       const buffer = await ctx.decodeAudioData(ab);
 
+      setPairConfirmed(false);
       if (type === 'ref') {
-        const melodyData = extractMelody(buffer);
         appDataRef.current.ctx = ctx;
-        appDataRef.current.refBuffer = buffer;
-        appDataRef.current.melodyData = melodyData;
+        setReference(buffer);
         setUpdateCounter(prev => prev + 1);
         // 上传干声后启动预览模式
         setTimeout(() => drawLoop(true), 100);
@@ -385,9 +256,10 @@ export default function Home() {
     } catch (e) {
       console.error('文件加载失败:', e);
       alert('文件加载失败');
+    } finally {
+      audioLoadingRef.current = false;
+      showLoading(false);
     }
-
-    showLoading(false);
   };
 
   const handleRefUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -416,74 +288,108 @@ export default function Home() {
   // ================= 4. 开始/结束评测 =================
   const startSession = async () => {
     const data = appDataRef.current;
-    if (data.students.length >= 4) return;
-    if (!data.ctx || !data.refBuffer) return;
+    const { ctx, refBuffer, accBuffer } = data;
+    if (audioLoadingRef.current || data.busy || data.students.length >= 4 || !ctx || !refBuffer || (accBuffer && !pairConfirmed)) return;
 
-    if (data.ctx.state === 'suspended') {
-      await data.ctx.resume();
-    }
-
-    const source = data.ctx.createBufferSource();
-    source.buffer = data.accBuffer || data.refBuffer;
-    source.connect(data.ctx.destination);
-    source.start(0);
-
-    data.currentSource = source;
-    data.startTime = data.ctx.currentTime;
-
+    data.busy = true;
+    setSessionBusy(true);
+    setRealtimeStatus('正在准备录音…');
+    let stream: MediaStream | undefined;
+    let micSource: MediaStreamAudioSourceNode | undefined;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const micSource = data.ctx.createMediaStreamSource(stream);
-      const analyser = data.ctx.createAnalyser();
-      analyser.fftSize = 2048;
+      await ctx.resume();
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: false, autoGainControl: false },
+      });
+      micSource = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 2 ** Math.ceil(Math.log2(ctx.sampleRate * PITCH_WINDOW_SECONDS));
       micSource.connect(analyser);
 
+      const activeStream = stream;
+      const input = micSource;
       const recorder = new MediaRecorder(stream);
       const chunks: Blob[] = [];
-      recorder.ondataavailable = (e) => chunks.push(e.data);
-      recorder.start();
-
-      data.analyser = analyser;
-      data.recorder = recorder;
-      data.chunks = chunks;
-      data.isPlaying = true;
-      data.stats = {
-        frames: 0,
-        hits: 0,
-        diffSum: 0,
-        teacherEnergy: [],
-        studentVol: [],
-        sampleData: []
+      recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+      recorder.onstop = async () => {
+        activeStream.getTracks().forEach(track => track.stop());
+        input.disconnect();
+        data.analyser = null;
+        data.recorder = null;
+        data.chunks = chunks;
+        const blob = new Blob(chunks, { type: recorder.mimeType || chunks[0]?.type });
+        try {
+          setRealtimeStatus('正在分析录音…');
+          if (!blob.size) {
+            setRealtimeStatus('未录到声音，请检查麦克风后重试');
+            return;
+          }
+          let feedback: ReturnType<typeof buildRecordedFeedback>;
+          try {
+            const audio = await ctx.decodeAudioData(await blob.arrayBuffer());
+            feedback = buildRecordedFeedback(data.refTrack, audio, RECORDING_LEAD_SECONDS);
+          } catch {
+            const result = insufficientSingingEvidence('recording_analysis_failed');
+            result.comments = { ...result.comments,
+              pitch: '录音暂无法分析，请先试听。', rhythm: '录音暂无法分析，请先试听。',
+              emotion: '录音暂无法分析，请先试听。' };
+            feedback = { result, phraseScores: [], sampleData: [] };
+          }
+          const { result, phraseScores, sampleData } = feedback;
+          addStudentCard(result, blob, phraseScores, sampleData);
+          setRealtimeStatus('本次反馈已生成');
+        } finally {
+          data.busy = false;
+          setSessionBusy(false);
+        }
       };
+      const source = ctx.createBufferSource();
+      source.buffer = accBuffer || refBuffer;
+      source.connect(ctx.destination);
+      data.currentSource = source;
+      data.recorder = recorder;
+      data.analyser = analyser;
+      data.livePairs = [];
+      data.calibration = inferLiveSingingOctave([]);
+      data.lastLiveSlot = -1;
 
-      setRealtimeStatus('Recording...');
-      setRealtimeScore('--');
-      setUpdateCounter(prev => prev + 1);
-
+      recorder.start();
+      data.startTime = ctx.currentTime + RECORDING_LEAD_SECONDS;
+      source.start(data.startTime);
       source.onended = stopSession;
+      data.isPlaying = true;
+      setRealtimeStatus('正在录音');
+      setRealtimeScore('--');
       drawLoop();
-    } catch (err) {
-      console.error('麦克风启动失败:', err);
-      alert('麦克风启动失败');
+    } catch (error) {
+      stream?.getTracks().forEach(track => track.stop());
+      micSource?.disconnect();
+      data.currentSource?.disconnect();
+      data.currentSource = null;
+      data.recorder = null;
+      data.analyser = null;
+      data.isPlaying = false;
+      data.busy = false;
+      setSessionBusy(false);
+      setRealtimeStatus('无法启动录音，请检查麦克风权限');
+      console.error(error);
     }
   };
 
   const stopSession = () => {
     const data = appDataRef.current;
     if (!data.isPlaying) return;
-
     data.isPlaying = false;
-    setUpdateCounter(prev => prev + 1);
-
-    if (data.currentSource) data.currentSource.stop();
-    if (data.recorder && data.recorder.state !== 'inactive') {
-      data.recorder.stop();
-      data.recorder.onstop = () => {
-        const blob = new Blob(data.chunks, { type: 'audio/webm' });
-        calculateBalancedScore(blob);
-        setRealtimeStatus('Finished');
-      };
+    const source = data.currentSource;
+    data.currentSource = null;
+    if (source) {
+      source.onended = null;
+      source.stop();
+      source.disconnect();
     }
+    if (data.recorder?.state === 'recording') data.recorder.stop();
+    setRealtimeScore('--');
+    setUpdateCounter(prev => prev + 1);
   };
 
   // ================= 5. 实时绘制 =================
@@ -492,7 +398,7 @@ export default function Home() {
 
     // 预览模式：只显示旋律线，不停止
     // 实时模式：正在播放时才继续
-    if (!preview && !data.isPlaying) return;
+    if (preview ? data.isPlaying : !data.isPlaying) return;
 
     // 根据屏幕尺寸选择正确的 canvas
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
@@ -546,96 +452,45 @@ export default function Home() {
       ctx.stroke();
     }
 
-    // 绘制参考音符
     const centerX = w / 3;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-    let currentNote: MelodyPoint | undefined;
-
-    const melodyData = data.melodyData;
-    for (let i = 0; i < melodyData.length; i++) {
-      const p = melodyData[i];
-      const x = centerX + (p.time - now) * CONFIG.scrollSpeed;
-      if (x > -10 && x < w) {
-        const y = getMidiY(p.midi, h);
-        ctx.fillRect(x, y - 3, 4, 6);
-        if (Math.abs(x - centerX) < 5) currentNote = p;
-      }
-    }
-
-    // 分析用户音高（仅非预览模式）
-    if (!preview && data.analyser) {
-      const buffer = new Float32Array(2048);
+    const sampleRate = data.ctx?.sampleRate ?? 48000;
+    const windowSize = Math.round(sampleRate * PITCH_WINDOW_SECONDS);
+    const slot = Math.floor((now - windowSize / sampleRate / 2) / PITCH_HOP_SECONDS);
+    const reference = data.refTrack[slot];
+    let marker: ReturnType<typeof getLivePitchDisplay>['marker'] = null;
+    if (!preview && data.analyser && slot >= 0) {
+      const buffer = new Float32Array(data.analyser.fftSize);
       data.analyser.getFloatTimeDomainData(buffer);
-      const rms = getRMS(buffer);
-      const freq = autoCorrelate(buffer, data.ctx!.sampleRate);
-
-      if (rms > 0.01) {
-        data.stats.studentVol.push(rms);
-
-        // 统计检测到有效音高的帧数（无论是否有currentNote）
-        if (freq && freq > 60) {
-          data.stats.frames = data.stats.frames + 1;
-        }
-
-        if (freq && freq > 60) {
-          const userMidi = freqToMidi(freq);
-          let displayMidi = userMidi;
-          let isHit = false;
-          let pitchDiff = 0;
-
-          if (currentNote) {
-            const diff = currentNote.midi - userMidi;
-            const octOffset = 12 * Math.round(diff / 12);
-            const normDiff = Math.abs(currentNote.midi - (userMidi + octOffset));
-
-            data.stats.diffSum = data.stats.diffSum + normDiff;
-            pitchDiff = normDiff;
-
-            displayMidi = userMidi + octOffset;
-
-            if (normDiff < CONFIG.tolerance) {
-              isHit = true;
-              data.stats.hits = data.stats.hits + 1;
-              setRealtimeScore('✨');
-              if (normDiff < 1.0) displayMidi = currentNote.midi;
-            } else {
-              setRealtimeScore(diff > 0 ? '📉' : '📈');
-            }
-          }
-
-          const y = getMidiY(displayMidi, h);
-          ctx.beginPath();
-          ctx.arc(centerX, y, 8, 0, Math.PI * 2);
-          ctx.fillStyle = isHit ? '#30d158' : '#ff453a';
-          ctx.fill();
-
-          // 记录采样点数据（用于乐句分析和演唱画像）
-          data.stats.sampleData.push({
-            time: now,
-            volume: rms,
-            hasPitch: true,
-            isHit: isHit,
-            pitchDiff: pitchDiff,
-            midi: userMidi // 记录实际 MIDI 值用于演唱画像
-          });
-        } else {
-          setRealtimeScore('...');
-          // 记录采样点数据（有声音但无音高）
-          data.stats.sampleData.push({
-            time: now,
-            volume: rms,
-            hasPitch: false,
-            isHit: false
-          });
-        }
+      const detected = detectPitch(buffer.subarray(-windowSize), sampleRate);
+      if (slot !== data.lastLiveSlot && data.calibration.status === 'pending'
+        && reference?.midi != null && !reference.ambiguous && !reference.clipped
+        && detected.midi != null && !detected.ambiguous && !detected.clipped) {
+        data.livePairs.push({ referenceMidi: reference.midi, singingMidi: detected.midi });
+        data.calibration = inferLiveSingingOctave(data.livePairs);
+      }
+      data.lastLiveSlot = slot;
+      const view = getLivePitchDisplay(detected, data.calibration, reference, PITCH_TOLERANCE);
+      marker = view.marker;
+      setRealtimeScore(view.status === 'matched' ? '✓' : view.status === 'deviated' ? '↕' : '—');
+      setRealtimeStatus(LIVE_PITCH_STATUS_TEXT[view.status]);
+    }
+    const range = getLivePitchRange(data.refTrack, marker?.midi);
+    const octaveShift = data.calibration.shiftSemitones ?? 0;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    for (const point of data.melodyData) {
+      const x = centerX + (point.time - now) * SCROLL_SPEED;
+      if (x > -10 && x < w) ctx.fillRect(x, livePitchY(point.midi + octaveShift, h, range) - 3, 4, 6);
+    }
+    if (marker) {
+      ctx.beginPath();
+      ctx.arc(centerX, livePitchY(marker.midi, h, range), 8, 0, Math.PI * 2);
+      if (marker.tone === 'pending') {
+        ctx.strokeStyle = '#ffd60a';
+        ctx.lineWidth = 2;
+        ctx.stroke();
       } else {
-        // 记录采样点数据（无声音）
-        data.stats.sampleData.push({
-          time: now,
-          volume: rms,
-          hasPitch: false,
-          isHit: false
-        });
+        ctx.fillStyle = marker.tone === 'hit' ? '#30d158' : '#ff453a';
+        ctx.fill();
       }
     }
 
@@ -655,923 +510,34 @@ export default function Home() {
     }
   };
 
-  // ================= 6. 评分算法 =================
-  const calculateBalancedScore = (blob: Blob) => {
-    const stats = appDataRef.current.stats;
-    const melodyData = appDataRef.current.melodyData;
-
-    // ========== 音准评分（50%）==========
-    // 0. 演唱时间轴自动对齐：
-    //    范唱播放/开口早晚与点击"开始"之间存在误差，直接在原始时间轴上判定会系统性扣分。
-    //    在 ±4s 内以 0.05s 步长搜索使命中数最大的时间偏移，先对齐整条演唱时间轴再评分。
-    //    对齐后演唱画像、乐句分析也随之校正。
-    const NOTE_WINDOW = 5 / CONFIG.scrollSpeed; // 与实时判定口径一致（±0.05s 内视为同一音符）
-    const voicedSamples = stats.sampleData.filter(
-      (s): s is SampleData & { midi: number } => s.hasPitch && typeof s.midi === 'number'
-    );
-    const melTimes = melodyData.map(p => p.time);
-
-    const findNoteAt = (t: number): MelodyPoint | undefined => {
-      if (melTimes.length === 0) return undefined;
-      let lo = 0, hi = melTimes.length - 1;
-      while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        if (melTimes[mid] < t) lo = mid + 1; else hi = mid;
-      }
-      let best: MelodyPoint | undefined;
-      let bestDist = Infinity;
-      for (const idx of [lo, lo - 1]) {
-        if (idx >= 0 && idx < melodyData.length) {
-          const d = Math.abs(melTimes[idx] - t);
-          if (d < bestDist) { bestDist = d; best = melodyData[idx]; }
-        }
-      }
-      return bestDist <= NOTE_WINDOW ? best : undefined;
-    };
-
-    let alignedFrames = 0;
-    let alignedHits = 0;
-    let alignedDiffSum = 0;
-
-    if (voicedSamples.length >= 20 && melodyData.length > 0) {
-      // 搜索最佳时间偏移（正数 = 开口比旋律晚）
-      let bestOffset = 0;
-      let bestHits = -1;
-      let bestNoteFrames = -1;
-      for (let offset = -4; offset <= 4.0001; offset += 0.05) {
-        let hits = 0, noteFrames = 0;
-        for (const s of voicedSamples) {
-          const note = findNoteAt(s.time - offset);
-          if (!note) continue;
-          noteFrames++;
-          const oct = 12 * Math.round((note.midi - s.midi) / 12);
-          const nd = Math.abs(note.midi - (s.midi + oct));
-          if (nd < CONFIG.tolerance) hits++;
-        }
-        if (hits > bestHits || (hits === bestHits && noteFrames > bestNoteFrames)) {
-          bestHits = hits;
-          bestNoteFrames = noteFrames;
-          bestOffset = offset;
-        }
-      }
-
-      // 应用偏移，校正整条演唱时间轴
-      if (Math.abs(bestOffset) > 0.0001) {
-        for (const s of stats.sampleData) s.time -= bestOffset;
-      }
-
-      // 对齐后逐帧重算命中与偏差，并回写 sampleData（乐句评分同步受益）
-      for (const s of voicedSamples) {
-        const note = findNoteAt(s.time);
-        if (!note) {
-          // 旋律上此处无音符（前奏/间奏/换气），不计入命中率分母
-          s.isHit = false;
-          s.pitchDiff = 0;
-          continue;
-        }
-        alignedFrames++;
-        const oct = 12 * Math.round((note.midi - s.midi) / 12);
-        const nd = Math.abs(note.midi - (s.midi + oct));
-        s.pitchDiff = nd;
-        s.isHit = nd < CONFIG.tolerance;
-        alignedDiffSum += nd;
-        if (s.isHit) alignedHits++;
-      }
-    }
-
-    // 1. 命中率（60%权重）：分母只统计旋律上有音符的帧
-    const rawAccuracy = alignedFrames > 0 ? alignedHits / alignedFrames : 0;
-    let accuracyScore = rawAccuracy * 60;
-
-    // 2. 音高偏差（40%权重）
-    const avgDiff = alignedFrames > 0 ? alignedDiffSum / alignedFrames : 0;
-    let precisionScore = 0;
-    if (avgDiff <= 0.7) precisionScore = 40;      // 非常精准
-    else if (avgDiff <= 1.0) precisionScore = 36; // 很好
-    else if (avgDiff <= 1.4) precisionScore = 32; // 不错
-    else if (avgDiff <= 2.0) precisionScore = 26; // 一般
-    else if (avgDiff <= 3.0) precisionScore = 20; // 较差
-    else precisionScore = 12;                     // 很差
-
-    // 综合音准分（有效音高帧过少视为未演唱，直接给下限分）
-    let scorePitch = 30;
-    if (alignedFrames >= 10) {
-      scorePitch = Math.round(accuracyScore + precisionScore);
-      scorePitch = Math.min(100, Math.max(30, scorePitch));
-    }
-
-    // ========== 节奏评分（30%）- 专业版 ==========
-    const teacherTotal = melodyData.length;
-
-    // 完成度：基于演唱时长判断（最关键的指标）
-    // stats.studentVol.length 是总采样次数（rms > 0.01的帧数）
-    // 实际采样间隔约 46.4ms（2048 / 44100 ≈ 0.0464秒）
-    const sampleInterval = 2048 / 44100; // 实际采样间隔
-    const duration = stats.studentVol.length * sampleInterval;
-    const refDuration = melodyData.length > 0 ? melodyData[melodyData.length - 1].time : 0;
-    const completion = refDuration > 0 ? Math.min(duration / refDuration, 1) : 0;
-
-    // 覆盖率：学生演唱的帧数 / 参考音符总数（辅助指标）
-    const coverage = teacherTotal > 0 ? stats.frames / teacherTotal : 0;
-
-    // 节奏稳定性分析：通过分析音量波动的规律性
-    const studentVol = stats.studentVol;
-    let rhythmStability = 0; // 节拍稳定性评分
-    let noteAccuracy = 0;   // 时值准确性评分
-    let articulation = 0;   // 起音收音控制评分
-
-    if (studentVol.length > 10) {
-      // 分析音量变化的平滑度（用于判断节奏的连贯性）
-      let volSmoothness = 0;
-      for (let i = 1; i < studentVol.length; i++) {
-        volSmoothness += Math.abs(studentVol[i] - studentVol[i - 1]);
-      }
-      volSmoothness = volSmoothness / (studentVol.length - 1);
-
-      // 分析起音（音量突增）和收音（音量衰减）的控制
-      let attackCount = 0;  // 起音次数
-      let decayCount = 0;   // 收音次数
-      let smoothTransitions = 0; // 平滑过渡次数
-
-      for (let i = 2; i < studentVol.length - 2; i++) {
-        const prev = studentVol[i - 1];
-        const curr = studentVol[i];
-        const next = studentVol[i + 1];
-
-        // 检测起音（音量快速上升）
-        if (curr > prev * 1.5 && curr > 0.02 && next >= curr * 0.9) {
-          attackCount++;
-        }
-        // 检测收音（音量快速下降）
-        if (curr < prev * 0.6 && curr < 0.02) {
-          decayCount++;
-        }
-        // 检测平滑过渡
-        if (Math.abs(curr - prev) < 0.005 && Math.abs(next - curr) < 0.005) {
-          smoothTransitions++;
-        }
-      }
-
-      // 节拍稳定性评分（25分）
-      // 音量变化过于频繁说明节奏不稳定
-      if (volSmoothness < 0.003) rhythmStability = 25;   // 非常稳定
-      else if (volSmoothness < 0.005) rhythmStability = 23;
-      else if (volSmoothness < 0.008) rhythmStability = 21;
-      else if (volSmoothness < 0.012) rhythmStability = 19;
-      else if (volSmoothness < 0.018) rhythmStability = 17;
-      else if (volSmoothness < 0.025) rhythmStability = 15;
-      else rhythmStability = 12;                          // 波动过大
-
-      // 时值准确性评分（20分）
-      // 通过起音和收音的比例判断时值控制
-      if (attackCount > 0 && decayCount > 0) {
-        const noteRatio = Math.min(attackCount / Math.max(decayCount, 1), decayCount / Math.max(attackCount, 1));
-        if (noteRatio > 0.8) noteAccuracy = 20;          // 时值准确
-        else if (noteRatio > 0.6) noteAccuracy = 18;
-        else if (noteRatio > 0.4) noteAccuracy = 16;
-        else noteAccuracy = 14;
-      } else {
-        noteAccuracy = 15; // 起音收音不够清晰
-      }
-
-      // 起音收音控制评分（5分）
-      if (smoothTransitions > studentVol.length * 0.3) articulation = 5;
-      else if (smoothTransitions > studentVol.length * 0.2) articulation = 4;
-      else if (smoothTransitions > studentVol.length * 0.1) articulation = 3;
-      else articulation = 2;
-    }
-
-    // 完成度评分（50%权重）
-    let completionScore = 0;
-    if (completion >= 0.95) completionScore = 50;      // 完整演唱
-    else if (completion >= 0.9) completionScore = 48;
-    else if (completion >= 0.85) completionScore = 45;
-    else if (completion >= 0.8) completionScore = 42;
-    else if (completion >= 0.75) completionScore = 38;
-    else if (completion >= 0.7) completionScore = 35;   // 范唱至少应该达到35分
-    else if (completion >= 0.65) completionScore = 30;
-    else if (completion >= 0.6) completionScore = 25;
-    else if (completion >= 0.55) completionScore = 20;
-    else if (completion >= 0.5) completionScore = 15;
-    else if (completion >= 0.4) completionScore = 10;
-    else completionScore = 5;
-
-    // 节奏评分 = 完成度(50%) + 节拍稳定性(25%) + 时值准确性(20%) + 起音收音(5%)
-    const scoreRhythm = Math.min(100, completionScore + rhythmStability + noteAccuracy + articulation);
-
-    // ========== 情绪评分（20%）==========
-    // 无基础保底分：音量(30) + 动态范围(30) + 连贯性(25) + 气息(15)，满分 100
-    if (studentVol.length === 0) {
-      return;
-    }
-
-    // 计算各项指标（基于发声帧，rms > 0.01）
-    const volMean = studentVol.reduce((a, b) => a + b, 0) / studentVol.length;
-    const volMin = Math.min(...studentVol);
-    const volMax = Math.max(...studentVol);
-    const dynamicRange = volMax - volMin;
-    const volStd = Math.sqrt(studentVol.reduce((a, b) => a + Math.pow(b - volMean, 2), 0) / studentVol.length);
-
-    // 连贯性分析：studentVol 只含发声帧，停顿必须从完整采样（含静音帧）统计
-    const allSamples = stats.sampleData;
-    let pauseCount = 0;
-    for (let i = 1; i < allSamples.length; i++) {
-      if (allSamples[i].volume < 0.01 && allSamples[i - 1].volume >= 0.01) {
-        pauseCount++;
-      }
-    }
-    const pauseRatio = pauseCount / (studentVol.length / 50); // 每秒发声的停顿次数
-
-    // 气息控制分析：音量持续能力和稳定性
-    let sustainSegments = 0;
-    let currentSegment = 0;
-    for (let i = 0; i < studentVol.length; i++) {
-      if (studentVol[i] > 0.02) {
-        currentSegment++;
-        if (currentSegment > 10) { // 持续超过10帧视为有效气息
-          sustainSegments++;
-        }
-      } else {
-        currentSegment = 0;
-      }
-    }
-    const sustainRatio = sustainSegments / (studentVol.length / 20);
-
-    // 音量评分（30分权重）
-    let volScore = 0;
-    if (volMean >= 0.06) volScore = 30;           // 音量很充足
-    else if (volMean >= 0.045) volScore = 27;     // 音量充足
-    else if (volMean >= 0.035) volScore = 24;     // 音量较好
-    else if (volMean >= 0.025) volScore = 20;     // 音量适中
-    else if (volMean >= 0.018) volScore = 16;     // 音量偏小
-    else if (volMean >= 0.012) volScore = 12;     // 音量小
-    else volScore = 8;                             // 音量太小
-
-    // 动态范围评分（30分权重）
-    let dynamicScore = 0;
-    if (dynamicRange >= 0.12) dynamicScore = 30;   // 动态范围很大
-    else if (dynamicRange >= 0.09) dynamicScore = 27;
-    else if (dynamicRange >= 0.07) dynamicScore = 24;
-    else if (dynamicRange >= 0.05) dynamicScore = 20;
-    else if (dynamicRange >= 0.03) dynamicScore = 16;
-    else if (dynamicRange >= 0.02) dynamicScore = 12;
-    else dynamicScore = 8;                         // 动态范围小
-
-    // 连贯性评分（25分权重）
-    let smoothnessScore = 0;
-    if (pauseRatio < 0.1) smoothnessScore = 25;    // 非常连贯
-    else if (pauseRatio < 0.3) smoothnessScore = 22;
-    else if (pauseRatio < 0.5) smoothnessScore = 19;
-    else if (pauseRatio < 0.8) smoothnessScore = 15;
-    else if (pauseRatio < 1.2) smoothnessScore = 11;
-    else smoothnessScore = 7;                      // 断音过多
-
-    // 气息控制评分（15分权重）
-    let breathControl = 0;
-    if (sustainRatio > 0.6) breathControl = 15;    // 气息控制很好
-    else if (sustainRatio > 0.5) breathControl = 13;
-    else if (sustainRatio > 0.4) breathControl = 11;
-    else if (sustainRatio > 0.3) breathControl = 9;
-    else breathControl = 7;                         // 气息不足
-
-    // 情绪总分（最低 20 分兜底，无 50 分保底）
-    const scoreEmotion = Math.min(100, Math.max(20, volScore + dynamicScore + smoothnessScore + breathControl));
-
-    // ========== 综合评分 ==========
-    let total = Math.round(scorePitch * 0.5 + scoreRhythm * 0.3 + scoreEmotion * 0.2);
-
-    // 鼓励性调整（保底降温版）
-    // 只在演唱完成度较高时给予适度保底，兜住"完整唱完"的底，但不掩盖单项差异
-    if (completion >= 0.8) {
-      // 演唱完成度80%以上（完整演唱）
-      if (scorePitch >= 85 && scoreEmotion >= 85) {
-        total = Math.max(total, 88);
-      }
-      if (scorePitch >= 80 && scoreEmotion >= 80) {
-        total = Math.max(total, 83);
-      }
-      if (scoreRhythm >= 80 && total < 78) {
-        total = 78;
-      }
-      if (scoreRhythm >= 70 && total < 73) {
-        total = 73;
-      }
-    } else if (completion >= 0.7) {
-      // 演唱完成度70%以上（基本完整）
-      if (scorePitch >= 85 && scoreEmotion >= 85) {
-        total = Math.max(total, 82);
-      }
-      if (scorePitch >= 80 && scoreEmotion >= 80) {
-        total = Math.max(total, 77);
-      }
-      if (scoreRhythm >= 65 && total < 72) {
-        total = 72;
-      }
-    } else if (completion >= 0.5) {
-      // 演唱完成度50%以上（一般）
-      if (scorePitch >= 80 && scoreEmotion >= 80) {
-        total = Math.max(total, 68);
-      }
-    }
-    // 完成度低于50%的不给予额外保底
-
-    // ========== 乐句识别和乐句级评分 ==========
-    const sampleData = stats.sampleData;
-    const phraseScores: PhraseScore[] = [];
-
-    if (sampleData.length > 50) {
-      // 检测乐句边界（基于音量停顿点）
-      const phrases: { startTime: number; endTime: number; samples: SampleData[] }[] = [];
-      let currentPhrase: SampleData[] = [];
-      let inPhrase = false;
-      let silenceFrames = 0;
-
-      // 参数配置
-      const SILENCE_THRESHOLD = 0.01;  // 静音阈值
-      const MIN_SILENCE_FRAMES = 10;   // 最小静音帧数（约0.46秒）
-      const MIN_PHRASE_SAMPLES = 15;   // 最小乐句样本数（约0.7秒）
-      const MAX_PHRASE_GAP = 200;      // 最大乐句间隔（样本数）
-
-      for (let i = 0; i < sampleData.length; i++) {
-        const sample = sampleData[i];
-
-        if (sample.volume > SILENCE_THRESHOLD) {
-          // 有声音
-          if (!inPhrase) {
-            // 新的乐句开始
-            if (currentPhrase.length >= MIN_PHRASE_SAMPLES) {
-              phrases.push({
-                startTime: currentPhrase[0].time,
-                endTime: currentPhrase[currentPhrase.length - 1].time,
-                samples: [...currentPhrase]
-              });
-            }
-            currentPhrase = [];
-          }
-          currentPhrase.push(sample);
-          inPhrase = true;
-          silenceFrames = 0;
-        } else {
-          // 无声音
-          silenceFrames++;
-          if (silenceFrames > MIN_SILENCE_FRAMES) {
-            // 静音时间足够长，乐句结束
-            if (currentPhrase.length >= MIN_PHRASE_SAMPLES) {
-              phrases.push({
-                startTime: currentPhrase[0].time,
-                endTime: currentPhrase[currentPhrase.length - 1].time,
-                samples: [...currentPhrase]
-              });
-            }
-            currentPhrase = [];
-            inPhrase = false;
-          }
-        }
-      }
-
-      // 处理最后一个乐句
-      if (currentPhrase.length >= MIN_PHRASE_SAMPLES) {
-        phrases.push({
-          startTime: currentPhrase[0].time,
-          endTime: currentPhrase[currentPhrase.length - 1].time,
-          samples: [...currentPhrase]
-        });
-      }
-
-      // 合并相邻的乐句（如果间隔太小）
-      const mergedPhrases: typeof phrases = [];
-      for (const phrase of phrases) {
-        if (mergedPhrases.length === 0) {
-          mergedPhrases.push(phrase);
-        } else {
-          const lastPhrase = mergedPhrases[mergedPhrases.length - 1];
-          const gapInSamples = (phrase.startTime - lastPhrase.endTime) / (2048 / 44100) / (2048 / 44100);
-          if (gapInSamples < MAX_PHRASE_GAP) {
-            // 合并乐句
-            lastPhrase.endTime = phrase.endTime;
-            lastPhrase.samples.push(...phrase.samples);
-          } else {
-            mergedPhrases.push(phrase);
-          }
-        }
-      }
-
-      // 为每个乐句计算得分
-      const sampleInterval = 2048 / 44100;
-
-      for (let i = 0; i < mergedPhrases.length; i++) {
-        const phrase = mergedPhrases[i];
-        const phraseSamples = phrase.samples;
-
-        // 音准评分
-        const pitchSamples = phraseSamples.filter(s => s.hasPitch);
-        const pitchFrames = pitchSamples.length;
-        const pitchHits = pitchSamples.filter(s => s.isHit).length;
-        const pitchAvgDiff = pitchSamples.length > 0
-          ? pitchSamples.reduce((sum, s) => sum + (s.pitchDiff || 0), 0) / pitchSamples.length
-          : 0;
-
-        let phrasePitchScore = 40;
-        if (pitchFrames > 0) {
-          const accuracy = pitchHits / pitchFrames;
-          let accuracyScore = accuracy * 60;
-          let precisionScore = 0;
-          if (pitchAvgDiff <= 0.7) precisionScore = 40;
-          else if (pitchAvgDiff <= 1.0) precisionScore = 36;
-          else if (pitchAvgDiff <= 1.4) precisionScore = 32;
-          else if (pitchAvgDiff <= 2.0) precisionScore = 26;
-          else if (pitchAvgDiff <= 3.0) precisionScore = 20;
-          else precisionScore = 12;
-          phrasePitchScore = Math.min(100, Math.max(30, accuracyScore + precisionScore));
-        }
-
-        // 节奏评分
-        const phraseDuration = phraseSamples.length * sampleInterval;
-        const totalDuration = sampleData.length * sampleInterval;
-        const phraseCompletion = totalDuration > 0 ? phraseDuration / totalDuration : 0;
-
-        let phraseRhythmScore = 40;
-        if (phraseSamples.length > 10) {
-          const volSmoothness = phraseSamples.reduce((sum, s, idx) => {
-            if (idx === 0) return 0;
-            return sum + Math.abs(s.volume - phraseSamples[idx - 1].volume);
-          }, 0) / (phraseSamples.length - 1);
-
-          let rhythmStabilityScore = 0;
-          if (volSmoothness < 0.003) rhythmStabilityScore = 50;
-          else if (volSmoothness < 0.005) rhythmStabilityScore = 45;
-          else if (volSmoothness < 0.008) rhythmStabilityScore = 40;
-          else if (volSmoothness < 0.012) rhythmStabilityScore = 34;
-          else if (volSmoothness < 0.018) rhythmStabilityScore = 28;
-          else rhythmStabilityScore = 20;
-
-          const phraseVol = phraseSamples.map(s => s.volume);
-          const phraseVolMean = phraseVol.reduce((a, b) => a + b, 0) / phraseVol.length;
-          const phraseDynamicRange = Math.max(...phraseVol) - Math.min(...phraseVol);
-
-          let dynamicScore = 0;
-          if (phraseDynamicRange >= 0.05) dynamicScore = 35;
-          else if (phraseDynamicRange >= 0.04) dynamicScore = 30;
-          else if (phraseDynamicRange >= 0.03) dynamicScore = 25;
-          else if (phraseDynamicRange >= 0.02) dynamicScore = 18;
-          else dynamicScore = 12;
-
-          phraseRhythmScore = Math.min(100, rhythmStabilityScore + dynamicScore + 15);
-        }
-
-        // 情绪评分（音量35 + 动态35 + 连贯30，满分100）
-        let phraseEmotionScore = 40;
-        if (phraseSamples.length > 10) {
-          const phraseVol = phraseSamples.map(s => s.volume);
-          const phraseVolMean = phraseVol.reduce((a, b) => a + b, 0) / phraseVol.length;
-          const phraseVolMax = Math.max(...phraseVol);
-          const phraseVolMin = Math.min(...phraseVol);
-          const phraseDynamicRange = phraseVolMax - phraseVolMin;
-
-          let volScore = 0;
-          if (phraseVolMean >= 0.06) volScore = 35;
-          else if (phraseVolMean >= 0.045) volScore = 31;
-          else if (phraseVolMean >= 0.035) volScore = 27;
-          else if (phraseVolMean >= 0.025) volScore = 22;
-          else if (phraseVolMean >= 0.018) volScore = 17;
-          else if (phraseVolMean >= 0.012) volScore = 12;
-          else volScore = 8;
-
-          let dynamicScore = 0;
-          if (phraseDynamicRange >= 0.10) dynamicScore = 35;
-          else if (phraseDynamicRange >= 0.08) dynamicScore = 31;
-          else if (phraseDynamicRange >= 0.06) dynamicScore = 27;
-          else if (phraseDynamicRange >= 0.04) dynamicScore = 22;
-          else if (phraseDynamicRange >= 0.025) dynamicScore = 17;
-          else dynamicScore = 10;
-
-          let pauseCount = 0;
-          for (let j = 1; j < phraseSamples.length; j++) {
-            if (phraseSamples[j].volume < 0.01 && phraseSamples[j - 1].volume >= 0.01) {
-              pauseCount++;
-            }
-          }
-          const pauseRatio = pauseCount / (phraseSamples.length / 50);
-
-          let smoothnessScore = 0;
-          if (pauseRatio < 0.1) smoothnessScore = 30;
-          else if (pauseRatio < 0.3) smoothnessScore = 26;
-          else if (pauseRatio < 0.5) smoothnessScore = 22;
-          else if (pauseRatio < 0.8) smoothnessScore = 17;
-          else smoothnessScore = 10;
-
-          phraseEmotionScore = Math.min(100, volScore + dynamicScore + smoothnessScore);
-        }
-
-        phraseScores.push({
-          id: i + 1,
-          startTime: phrase.startTime,
-          endTime: phrase.endTime,
-          pitch: phrasePitchScore,
-          rhythm: phraseRhythmScore,
-          emotion: phraseEmotionScore
-        });
-      }
-    }
-
-    const comments = generateDetailedComments(
-      scorePitch,
-      scoreRhythm,
-      scoreEmotion,
-      total,
-      avgDiff,
-      coverage,
-      completion,
-      rhythmStability,
-      noteAccuracy,
-      articulation,
-      pauseRatio,
-      sustainRatio,
-      dynamicRange,
-      volStd,
-      phraseScores
-    );
-    addStudentCard(total, scorePitch, scoreRhythm, scoreEmotion, comments, blob, phraseScores, sampleData);
-  };
-
-  const generateDetailedComments = (
-    p: number,
-    r: number,
-    e: number,
-    total: number,
-    avgDiff: number,
-    coverage: number,
-    completion: number,
-    rhythmStability: number,
-    noteAccuracy: number,
-    articulation: number,
-    pauseRatio: number,
-    sustainRatio: number,
-    dynamicRange: number,
-    volStd: number,
-    phraseScores: PhraseScore[]
-  ): ScoreComments => {
-    // ========== 音准评语（10 档细分，每 5 分一档）==========
-    const pitchComments = {
-      perfect: [
-        "音准极其精准！每个音都落在标准位置，专业级听觉表现！",
-        "音高控制能力卓越，听感舒适稳定，音准偏差极小！",
-        "音准完美！几乎零误差，完全符合专业演唱标准！"
-      ],
-      amazing: [
-        "音准近乎完美！绝大多数音符精准落位，只差毫厘！",
-        "音高控制接近专业水准，细听几乎挑不出毛病！"
-      ],
-      excellent: [
-        "音准非常出色！绝大部分音都准确到位，听觉体验极佳！",
-        "音高控制优秀，偶有小偏差但不影响整体音乐表现！",
-        "音准表现优秀！核心音符非常稳定，令人满意！"
-      ],
-      great: [
-        "音准优秀！核心音准稳定，个别细节音再精确些更好！",
-        "音高把握到位！主旋律精准，注意过渡音的落点！"
-      ],
-      good: [
-        "音准表现良好！大部分音符准确，注意细节音准会更出色！",
-        "整体音准达标，多做音阶练习有助于提升精确度！",
-        "音准基本合格，注意半音和全音的细微差异会更好！"
-      ],
-      okay: [
-        "音准中上！大框架准确，注意高音区的音准控制！",
-        "音高方向正确，个别长音容易跑偏，保持气息支撑！"
-      ],
-      fair: [
-        "音准有波动，建议每天练习音阶和琶音，提升听觉敏感度！",
-        "部分音高需要调整，多听多唱，培养固定音准感！",
-        "音准还在发展中，建议用钢琴辅助练习，找准每个音位！"
-      ],
-      developing: [
-        "音准基本成型，建议跟钢琴哼唱音阶，巩固音高概念！",
-        "音高感觉在建立中，先唱准主音，再扩展音域！"
-      ],
-      weak: [
-        "音准还在起步阶段，先慢唱准每个音，再追求连贯！",
-        "音高偏差较多，建议一句一句跟唱范唱，逐句校准！"
-      ],
-      poor: [
-        "音准需要加强，建议从基础音阶开始，每天坚持练习！",
-        "音高控制还有较大进步空间，跟着范唱慢速练习很重要！",
-        "音准需要系统训练，多听专业演唱，培养音准意识！"
-      ]
-    };
-
-    let cPitch = "";
-    if (p >= 95) cPitch = pitchComments.perfect[Math.floor(Math.random() * pitchComments.perfect.length)];
-    else if (p >= 90) cPitch = pitchComments.amazing[Math.floor(Math.random() * pitchComments.amazing.length)];
-    else if (p >= 85) cPitch = pitchComments.excellent[Math.floor(Math.random() * pitchComments.excellent.length)];
-    else if (p >= 80) cPitch = pitchComments.great[Math.floor(Math.random() * pitchComments.great.length)];
-    else if (p >= 75) cPitch = pitchComments.good[Math.floor(Math.random() * pitchComments.good.length)];
-    else if (p >= 70) cPitch = pitchComments.okay[Math.floor(Math.random() * pitchComments.okay.length)];
-    else if (p >= 65) cPitch = pitchComments.fair[Math.floor(Math.random() * pitchComments.fair.length)];
-    else if (p >= 60) cPitch = pitchComments.developing[Math.floor(Math.random() * pitchComments.developing.length)];
-    else if (p >= 55) cPitch = pitchComments.weak[Math.floor(Math.random() * pitchComments.weak.length)];
-    else cPitch = pitchComments.poor[Math.floor(Math.random() * pitchComments.poor.length)];
-
-    // 根据具体偏差补充专业评语
-    if (avgDiff > 3) {
-      cPitch += " 平均偏差超过3个半音，需要重点练习音程听辨！";
-    } else if (avgDiff > 2.5) {
-      cPitch += " 音准偏差明显，建议用慢速演唱练习！";
-    } else if (avgDiff > 1.8) {
-      cPitch += " 音准有提升空间，注意音准预判和气息稳定！";
-    } else if (avgDiff < 0.8) {
-      cPitch += " 平均偏差极小，音准控制达到专业水准！";
-    }
-
-    // ========== 节奏评语（专业版 - 根据具体指标给出针对性指导）==========
-    // 根据完成度、节奏稳定性、时值准确性、起音收音控制综合判断
-    let rhythmMainComment = "";
-    let rhythmTechnicalComment = "";
-
-    // 主要评语（基于总分）
-    if (r >= 95) {
-      rhythmMainComment = "节奏掌控卓越！专业级别的节奏控制，完美驾驭音乐！";
-    } else if (r >= 90) {
-      rhythmMainComment = "节奏感极佳！绝大部分节拍精准，乐感十足！";
-    } else if (r >= 85) {
-      rhythmMainComment = "节奏非常出色！整体节奏流畅，控制力很强！";
-    } else if (r >= 80) {
-      rhythmMainComment = "节奏表现优秀！基本跟上音乐骨架，偶有细微波动！";
-    } else if (r >= 75) {
-      rhythmMainComment = "节奏良好！大部分时间卡点准确，继续保持！";
-    } else if (r >= 70) {
-      rhythmMainComment = "节奏基本准确！注意保持稳定的速度感！";
-    } else if (r >= 65) {
-      rhythmMainComment = "节奏尚可，需要加强稳定性训练！";
-    } else if (r >= 60) {
-      rhythmMainComment = "节奏需要提升，建议用节拍器辅助练习！";
-    } else if (r >= 50) {
-      rhythmMainComment = "节奏感较弱，建议从基础节奏型开始练习！";
-    } else {
-      rhythmMainComment = "节奏需要重点突破，多听多练是关键！";
-    }
-
-    // 技术性评语（基于具体指标）
-    if (completion < 0.5) {
-      rhythmTechnicalComment += " 演唱完整度偏低，建议完整唱完每首歌！";
-    } else if (completion < 0.7) {
-      rhythmTechnicalComment += " 完整度有待提高，跟上音乐的完整进程！";
-    }
-
-    if (rhythmStability < 15) {
-      rhythmTechnicalComment += " 节拍稳定性不足，节奏时快时慢，建议用节拍器练习！";
-    } else if (rhythmStability < 20) {
-      rhythmTechnicalComment += " 节拍波动较大，注意保持恒定的速度！";
-    }
-
-    if (noteAccuracy < 16) {
-      rhythmTechnicalComment += " 音符时值控制不准，建议练习音符长短！";
-    } else if (noteAccuracy < 18) {
-      rhythmTechnicalComment += " 时值准确性有提升空间，注意音符的完整性！";
-    }
-
-    if (articulation < 4) {
-      rhythmTechnicalComment += " 起音收音不够清晰，建议练习吐字发音的连贯性！";
-    }
-
-    // 如果没有技术性问题，给予正面反馈
-    if (!rhythmTechnicalComment) {
-      if (rhythmStability >= 23 && noteAccuracy >= 18 && articulation >= 4) {
-        rhythmTechnicalComment += " 起音收音清晰，时值准确，节拍稳定，节奏基本功扎实！";
-      } else {
-        rhythmTechnicalComment += " 节奏表现全面，继续加强细节控制！";
-      }
-    }
-
-    const cRhythm = rhythmMainComment + rhythmTechnicalComment;
-
-    // ========== 情绪评语（专业版 - 根据连贯性、气息、动态等指标给出针对性指导）==========
-    // 根据连贯性、气息控制、动态范围、稳定性综合判断
-    let emotionMainComment = "";
-    let emotionTechnicalComment = "";
-
-    // 主要评语（基于总分）
-    if (e >= 95) {
-      emotionMainComment = "情感表达卓越！专业级的情绪掌控，感染力极强！";
-    } else if (e >= 90) {
-      emotionMainComment = "情感表达出色！声音富有层次，能打动听众！";
-    } else if (e >= 85) {
-      emotionMainComment = "情感丰富！声音有起伏，演唱很有感染力！";
-    } else if (e >= 80) {
-      emotionMainComment = "情绪表达良好！强弱对比明显，听感舒适！";
-    } else if (e >= 75) {
-      emotionMainComment = "情绪尚可，声音有一定的变化和层次！";
-    } else if (e >= 70) {
-      emotionMainComment = "情绪表现一般，建议更自然地流露情感！";
-    } else if (e >= 65) {
-      emotionMainComment = "情感表达有待提高，尝试更投入地演唱！";
-    } else if (e >= 60) {
-      emotionMainComment = "声音较为平淡，建议感受歌曲的情感变化！";
-    } else if (e >= 50) {
-      emotionMainComment = "声音缺乏变化，多听原唱学习情感表达！";
-    } else {
-      emotionMainComment = "声音需要大幅提升，加强情感投入和技巧训练！";
-    }
-
-    // 技术性评语（基于具体指标）
-    const volMean = appDataRef.current.stats.studentVol.length > 0
-      ? appDataRef.current.stats.studentVol.reduce((a, b) => a + b, 0) / appDataRef.current.stats.studentVol.length
-      : 0;
-
-    if (volMean < 0.02) {
-      emotionTechnicalComment += " 整体音量偏小，建议大胆发声，提升音量！";
-    } else if (volMean < 0.03) {
-      emotionTechnicalComment += " 音量适中，可以再放开一些！";
-    }
-
-    if (dynamicRange < 0.03) {
-      emotionTechnicalComment += " 动态范围偏小，声音缺乏起伏，建议练习强弱对比！";
-    } else if (dynamicRange < 0.04) {
-      emotionTechnicalComment += " 强弱对比还可以，可以更鲜明一些！";
-    }
-
-    if (pauseRatio > 1.2) {
-      emotionTechnicalComment += " 声音断续明显，连贯性不足，建议练习气息支持！";
-    } else if (pauseRatio > 0.8) {
-      emotionTechnicalComment += " 停顿较多，注意乐句的连贯演唱！";
-    } else if (pauseRatio < 0.1) {
-      emotionTechnicalComment += " 声音非常连贯，流畅度极佳！";
-    }
-
-    if (sustainRatio < 0.4) {
-      emotionTechnicalComment += " 气息控制较弱，长音支撑不足，建议练习腹式呼吸！";
-    } else if (sustainRatio < 0.5) {
-      emotionTechnicalComment += " 气息支持有待提高，加强气息训练！";
-    } else if (sustainRatio > 0.6) {
-      emotionTechnicalComment += " 气息控制优秀，长音支撑能力强！";
-    }
-
-    if (volStd > 0.08) {
-      emotionTechnicalComment += " 声音稳定性不足，波动较大，注意气息平稳！";
-    } else if (volStd > 0.06) {
-      emotionTechnicalComment += " 声音稳定性可以提升，控制好音量变化！";
-    }
-
-    // 如果没有技术性问题，给予正面反馈
-    if (!emotionTechnicalComment) {
-      if (dynamicRange >= 0.05 && pauseRatio < 0.3 && sustainRatio > 0.5) {
-        emotionTechnicalComment += " 气息控制优秀，连贯性强，动态范围丰富，情感表达完整！";
-      } else {
-        emotionTechnicalComment += " 情绪表达全面，继续完善细节！";
-      }
-    }
-
-    const cEmotion = emotionMainComment + emotionTechnicalComment;
-
-    // ========== 总评（称号评语 + 实时数据 + 晋升提示）==========
-    const rankInfo = getRankInfo(total);
-    const titlePool = TITLE_COMMENTS[rankInfo.title] || [];
-    let cOverall = titlePool.length > 0
-      ? titlePool[Math.floor(Math.random() * titlePool.length)]
-      : '';
-    cOverall += ` 本次总分 ${total} 分（音准 ${p} · 节奏 ${r} · 情绪 ${e}），当前等级 Lv.${total}「${rankInfo.title}」。`;
-    if (rankInfo.nextTitle && rankInfo.nextTitleAt !== undefined) {
-      cOverall += ` 再得 ${rankInfo.nextTitleAt - total} 分即可晋升「${rankInfo.nextTitle}」（Lv.${rankInfo.nextTitleAt}），继续加油！`;
-    } else {
-      cOverall += ' 已登顶最高荣誉，你就是全场的焦点！';
-    }
-
-    return { overall: cOverall, pitch: cPitch, rhythm: cRhythm, emotion: cEmotion };
-  };
-
   const addStudentCard = (
-    total: number,
-    p: number,
-    r: number,
-    e: number,
-    comments: ScoreComments,
+    result: ReturnType<typeof insufficientSingingEvidence>,
     blob: Blob,
-    phraseScores: PhraseScore[] = [],
-    sampleData: SampleData[] = []
+    phraseScores: PhraseScore[],
+    sampleData: SampleData[],
   ) => {
     const data = appDataRef.current;
-    const melodyData = data.melodyData;
     const name = `同学 ${String.fromCharCode(65 + data.students.length)}`;
-    // 新等级体系：Lv = 分数（一分一级）+ 荣誉称号 + 渐变颜色
-    const rankInfo = getRankInfo(total);
-    const rank = `Lv.${rankInfo.lv}`;
-    const color = rankInfo.color;
-    const title = rankInfo.title;
-
-    // 生成歌曲得分明细的UI
-    const phraseDetails = phraseScores.length > 0 ? (
-      <div className="phrase-details mt-3">
-        <div className="phrase-details-header">
-          <span>📊 歌曲得分明细</span>
-          <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: 'normal' }}>
-            共 {phraseScores.length} 个片段
-          </span>
-        </div>
-        <div className="phrase-details-content">
-          {phraseScores.map((phrase) => (
-            <div key={phrase.id} className="phrase-item">
-              <div className="phrase-time-badge">
-                {phrase.startTime.toFixed(1)}s-{phrase.endTime.toFixed(1)}s
-              </div>
-              <div className="phrase-info">
-                <div className="phrase-scores">
-                  <div className="phrase-score-item">
-                    <span className="phrase-label">🎵 音准</span>
-                    <span className={phrase.pitch >= 90 ? 'phrase-score-high' : phrase.pitch >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
-                      {Math.round(phrase.pitch)}
-                    </span>
-                  </div>
-                  <div className="phrase-score-item">
-                    <span className="phrase-label">🥁 节奏</span>
-                    <span className={phrase.rhythm >= 90 ? 'phrase-score-high' : phrase.rhythm >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
-                      {Math.round(phrase.rhythm)}
-                    </span>
-                  </div>
-                  <div className="phrase-score-item">
-                    <span className="phrase-label">❤️ 情绪</span>
-                    <span className={phrase.emotion >= 90 ? 'phrase-score-high' : phrase.emotion >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
-                      {Math.round(phrase.emotion)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    ) : null;
-
-    const card = (
-      <div key={data.students.length} className="student-card" style={{ borderLeftColor: color }}>
-        <div className="card-top">
-          <div className="stu-name">
-            {name} <span className="rank-badge" style={{ background: color }}>{rank}</span>
-            <span className="rank-title" style={{ color }}>{title}</span>
-          </div>
-          <div className="stu-total" style={{ color: color }}>{total}</div>
-        </div>
-        <div className="dim-bars">
-          <div className="dim-row">
-            <span className="dim-label">音准</span>
-            <div className="dim-track"><div className="dim-fill" style={{ width: `${p}%`, background: '#30d158' }}></div></div>
-            <span className="dim-score">{p}</span>
-          </div>
-          <div className="dim-row">
-            <span className="dim-label">节奏</span>
-            <div className="dim-track"><div className="dim-fill" style={{ width: `${r}%`, background: '#0a84ff' }}></div></div>
-            <span className="dim-score">{r}</span>
-          </div>
-          <div className="dim-row">
-            <span className="dim-label">情绪</span>
-            <div className="dim-track"><div className="dim-fill" style={{ width: `${e}%`, background: '#ffd60a' }}></div></div>
-            <span className="dim-score">{e}</span>
-          </div>
-        </div>
-        <div className="pro-comment">
-          <div className="comment-item"><span className="c-label">🏆 总评:</span><span>{comments.overall}</span></div>
-          <div className="comment-item"><span className="c-label">🎵 音准:</span><span>{comments.pitch}</span></div>
-          <div className="comment-item"><span className="c-label">🥁 节奏:</span><span>{comments.rhythm}</span></div>
-          <div className="comment-item"><span className="c-label">❤️ 情绪:</span><span>{comments.emotion}</span></div>
-        </div>
-        {phraseDetails}
-        <audio controls src={URL.createObjectURL(blob)} />
-      </div>
-    );
-
-    setStudentCards(prev => [card, ...prev]);
-    
-    // 保存评分数据用于分享
-    const scoreData: StudentScoreData = {
-      name,
-      total,
-      pitch: p,
-      rhythm: r,
-      emotion: e,
-      rank,
-      rankColor: color,
-      rankTitle: title,
-      comments,
-      phraseScores,
-      sampleData // 保存采样数据用于演唱画像
+    const score: StudentScoreData = {
+      name, total: null, pitch: result.pitch, rhythm: result.rhythm, emotion: result.emotion,
+      version: result.scoringVersion,
+      portraitReference: data.melodyData.map(point => ({
+        ...point, midi: point.midi + (result.octaveEvidence.shiftSemitones ?? 0),
+      })),
+      rankColor: '#0a84ff', phraseScores, sampleData,
+      comments: { ...result.comments, overall: '以下为本次演唱的分项练习反馈。' },
     };
-    setStudentScoreData(prev => [scoreData, ...prev]);
-    
+    const audioUrl = URL.createObjectURL(blob);
+    setStudentCards(prev => [renderStudentCard(score, name, audioUrl), ...prev]);
+    setStudentScoreData(prev => [score, ...prev]);
     data.students.push({ name });
     setUpdateCounter(prev => prev + 1);
   };
 
   const resetClassroom = () => {
-    if (!confirm('确定要清空记录吗？')) return;
+    if (appDataRef.current.busy || !confirm('确定要清空记录吗？')) return;
     const data = appDataRef.current;
     data.students = [];
-    data.stats = {
-      frames: 0,
-      hits: 0,
-      diffSum: 0,
-      teacherEnergy: [],
-      studentVol: [],
-      sampleData: []
-    };
     setStudentCards([]);
     setStudentScoreData([]);
     setUpdateCounter(prev => prev + 1);
@@ -1784,98 +750,8 @@ export default function Home() {
           // 保存评分数据
           setStudentScoreData(scores);
           
-          // 重新生成学生卡片
-          const newCards: React.ReactElement[] = [];
-          const data = appDataRef.current;
-          
-          for (const score of scores) {
-            // 生成歌曲得分明细UI
-            const phraseDetails = score.phraseScores && score.phraseScores.length > 0 ? (
-              <div className="phrase-details mt-3">
-                <div className="phrase-details-header">
-                  <span>📊 歌曲得分明细</span>
-                  <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: 'normal' }}>
-                    共 {score.phraseScores.length} 个片段
-                  </span>
-                </div>
-                <div className="phrase-details-content">
-                  {score.phraseScores.map((phrase: PhraseScore) => (
-                    <div key={phrase.id} className="phrase-item">
-                      <div className="phrase-time-badge">
-                        {phrase.startTime.toFixed(1)}s-{phrase.endTime.toFixed(1)}s
-                      </div>
-                      <div className="phrase-info">
-                        <div className="phrase-scores">
-                          <div className="phrase-score-item">
-                            <span className="phrase-label">🎵 音准</span>
-                            <span className={phrase.pitch >= 90 ? 'phrase-score-high' : phrase.pitch >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
-                              {Math.round(phrase.pitch)}
-                            </span>
-                          </div>
-                          <div className="phrase-score-item">
-                            <span className="phrase-label">🥁 节奏</span>
-                            <span className={phrase.rhythm >= 90 ? 'phrase-score-high' : phrase.rhythm >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
-                              {Math.round(phrase.rhythm)}
-                            </span>
-                          </div>
-                          <div className="phrase-score-item">
-                            <span className="phrase-label">❤️ 情绪</span>
-                            <span className={phrase.emotion >= 90 ? 'phrase-score-high' : phrase.emotion >= 80 ? 'phrase-score-good' : 'phrase-score-low'}>
-                              {Math.round(phrase.emotion)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null;
-            
-            const card = (
-              <div key={newCards.length} className="student-card" style={{ borderLeftColor: score.rankColor }}>
-                <div className="card-top">
-                  <div className="stu-name">
-                    {score.name} <span className="rank-badge" style={{ background: score.rankColor }}>{score.rank}</span>
-                    {score.rankTitle && <span className="rank-title" style={{ color: score.rankColor }}>{score.rankTitle}</span>}
-                  </div>
-                  <div className="stu-total" style={{ color: score.rankColor }}>{score.total}</div>
-                </div>
-                <div className="dim-bars">
-                  <div className="dim-row">
-                    <span className="dim-label">音准</span>
-                    <div className="dim-track"><div className="dim-fill" style={{ width: `${score.pitch}%`, background: '#30d158' }}></div></div>
-                    <span className="dim-score">{score.pitch}</span>
-                  </div>
-                  <div className="dim-row">
-                    <span className="dim-label">节奏</span>
-                    <div className="dim-track"><div className="dim-fill" style={{ width: `${score.rhythm}%`, background: '#0a84ff' }}></div></div>
-                    <span className="dim-score">{score.rhythm}</span>
-                  </div>
-                  <div className="dim-row">
-                    <span className="dim-label">情绪</span>
-                    <div className="dim-track"><div className="dim-fill" style={{ width: `${score.emotion}%`, background: '#ffd60a' }}></div></div>
-                    <span className="dim-score">{score.emotion}</span>
-                  </div>
-                </div>
-                <div className="pro-comment">
-                  {score.comments.overall && (
-                    <div className="comment-item"><span className="c-label">🏆 总评:</span><span>{score.comments.overall}</span></div>
-                  )}
-                  <div className="comment-item"><span className="c-label">🎵 音准:</span><span>{score.comments.pitch}</span></div>
-                  <div className="comment-item"><span className="c-label">🥁 节奏:</span><span>{score.comments.rhythm}</span></div>
-                  <div className="comment-item"><span className="c-label">❤️ 情绪:</span><span>{score.comments.emotion}</span></div>
-                </div>
-                {phraseDetails}
-                {score.audioUrl && <audio controls src={score.audioUrl} />}
-              </div>
-            );
-            
-            newCards.push(card);
-            data.students.push({ name: score.name });
-          }
-          
-          setStudentCards(newCards);
+          appDataRef.current.students = scores.map((score: StudentScoreData) => ({ name: score.name }));
+          setStudentCards(scores.map((score: StudentScoreData, index: number) => renderStudentCard(score, index, score.audioUrl)));
           setUpdateCounter(prev => prev + 1);
         }
       }
@@ -2154,6 +1030,7 @@ export default function Home() {
   const refBuffer = appDataRef.current.refBuffer;
   const accBuffer = appDataRef.current.accBuffer;
   const students = appDataRef.current.students;
+  const portraitScore = studentScoreData[portraitStudentIndex];
 
   // 移动端当前激活的标签页
   const [mobileTab, setMobileTab] = useState<'main' | 'records' | 'score'>('main');
@@ -2289,10 +1166,17 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-[15px]">
+          {accLoaded && (
+                <label className="mb-2 flex gap-2 text-xs text-[#ccc]">
+                  <input type="checkbox" checked={pairConfirmed} disabled={sessionBusy}
+                    onChange={event => setPairConfirmed(event.target.checked)} />
+                  已确认干声和伴奏为同一乐段、同调、同速度，且从同一位置开始
+                </label>
+              )}
+              <div className="grid grid-cols-2 gap-[15px]">
             <button
               onClick={startSession}
-              disabled={!refBuffer || students.length >= 4}
+              disabled={!refBuffer || students.length >= 4 || loading || sessionBusy || (accLoaded && !pairConfirmed)}
               className="btn btn-start"
             >
               🎙️ 第 {students.length + 1} 位同学 (开始)
@@ -2357,10 +1241,10 @@ export default function Home() {
                 <div className="flex-1 rounded-xl bg-[#1e1e20] border border-[#333] p-2 overflow-hidden min-h-0 min-w-0">
                   {portraitExpanded ? (
                     <SingingPortrait 
-                      sampleData={studentScoreData[portraitStudentIndex]?.sampleData || []}
-                      melodyData={appDataRef.current.melodyData}
-                      tolerance={CONFIG.tolerance}
-                      studentName={studentScoreData[portraitStudentIndex]?.name || ''}
+                      sampleData={portraitScore?.sampleData || []}
+                      melodyData={portraitScore?.portraitReference ?? appDataRef.current.melodyData}
+                      tolerance={portraitScore?.version ? PITCH_TOLERANCE : 1.8}
+                      studentName={portraitScore?.name || ''}
                     />
                   ) : (
                     <div className="h-full flex items-center justify-center text-[#555] text-sm">
@@ -2418,8 +1302,15 @@ export default function Home() {
                 </div>
               </div>
 
+              {accLoaded && (
+                <label className="mb-2 flex gap-2 text-xs text-[#ccc]">
+                  <input type="checkbox" checked={pairConfirmed} disabled={sessionBusy}
+                    onChange={event => setPairConfirmed(event.target.checked)} />
+                  已确认干声和伴奏为同一乐段、同调、同速度，且从同一位置开始
+                </label>
+              )}
               <div className="grid grid-cols-2 gap-2">
-                <button onClick={startSession} disabled={!refBuffer || students.length >= 4} className="btn btn-start py-3 text-sm">
+                <button onClick={startSession} disabled={!refBuffer || students.length >= 4 || loading || sessionBusy || (accLoaded && !pairConfirmed)} className="btn btn-start py-3 text-sm">
                   🎙️ 第 {students.length + 1} 位
                 </button>
                 <button onClick={stopSession} disabled={!appDataRef.current.isPlaying} className="btn btn-stop py-3 text-sm">
@@ -2446,10 +1337,10 @@ export default function Home() {
                 {studentScoreData.length > 0 ? (
                   <div className="h-[340px]">
                     <SingingPortrait
-                      sampleData={studentScoreData[portraitStudentIndex]?.sampleData || []}
-                      melodyData={appDataRef.current.melodyData}
-                      tolerance={CONFIG.tolerance}
-                      studentName={studentScoreData[portraitStudentIndex]?.name || ''}
+                      sampleData={portraitScore?.sampleData || []}
+                      melodyData={portraitScore?.portraitReference ?? appDataRef.current.melodyData}
+                      tolerance={portraitScore?.version ? PITCH_TOLERANCE : 1.8}
+                      studentName={portraitScore?.name || ''}
                     />
                   </div>
                 ) : (

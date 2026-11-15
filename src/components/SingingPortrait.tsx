@@ -7,6 +7,7 @@ interface SampleData {
   volume: number;
   hasPitch: boolean;
   isHit: boolean;
+  tone?: 'hit' | 'miss' | 'pending';
   pitchDiff?: number;
   midi?: number;
 }
@@ -225,7 +226,7 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
       const x2 = timeToX(s2.time);
       const y2 = midiToY(s2.midi);
 
-      ctx.strokeStyle = s1.isHit ? '#30d158' : '#ff453a';
+      ctx.strokeStyle = s1.tone === 'pending' ? '#ffd60a' : s1.isHit ? '#30d158' : '#ff453a';
       ctx.beginPath();
       ctx.moveTo(x1, y1);
       ctx.lineTo(x2, y2);
@@ -238,7 +239,7 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
       const x = timeToX(sample.time);
       const y = midiToY(sample.midi);
 
-      ctx.fillStyle = sample.isHit ? '#30d158' : '#ff453a';
+      ctx.fillStyle = sample.tone === 'pending' ? '#ffd60a' : sample.isHit ? '#30d158' : '#ff453a';
       ctx.beginPath();
       ctx.arc(x, y, 3.5, 0, Math.PI * 2);
       ctx.fill();
