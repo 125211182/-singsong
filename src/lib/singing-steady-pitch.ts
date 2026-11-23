@@ -1,4 +1,5 @@
 import type { PitchFrame } from './singing-evidence';
+import { SINGING_PRACTICE_TOLERANCE } from './singing-practice-octave';
 
 /** Reference-only note centres on the original time axis; these are practice parameters. */
 export const STEADY_PITCH_AGGREGATION = 'reference_steady_centres_guarded_v1' as const;
@@ -6,10 +7,12 @@ const HOP_SECONDS = 0.05;
 const MIN_SEGMENT_SECONDS = 0.2;
 const REFERENCE_CENTRE_BAND_SEMITONES = 0.6;
 const EPSILON = 1e-7;
+const FULL_CREDIT_CENTS = SINGING_PRACTICE_TOLERANCE * 100;
+const ZERO_CREDIT_CENTS = 200;
 
 export interface TimedPitchDifference {
   referenceTime: number;
-  /** Already corrected by the single whole-performance register offset. */
+  /** Signed difference from the closest permitted octave of the reference note. */
   differenceSemitones: number;
 }
 export interface SteadyPitchAggregation {
@@ -39,14 +42,14 @@ function usable(frame: PitchFrame): boolean {
     && frame.rms > 0 && !frame.clipped && !frame.ambiguous;
 }
 function credit(cents: number): number {
-  return cents <= 60 + EPSILON ? 1 : Math.max(0, (200 - cents) / 140);
+  return cents <= FULL_CREDIT_CENTS + EPSILON ? 1 : Math.max(0, (ZERO_CREDIT_CENTS - cents) / (ZERO_CREDIT_CENTS - FULL_CREDIT_CENTS));
 }
 
 /**
  * A centre is formed using only a continuous reference plateau (>=200 ms).
- * No recording-dependent segmentation, best time shift, gap bridge or local
- * octave fold is permitted. Large errors in every reliable pair still limit
- * the result, including pairs outside these plateaus.
+ * Segmentation uses only the reference, and each pair already carries its
+ * measured pitch difference. Large errors in every reliable pair still
+ * limit the result, including pairs outside these plateaus.
  */
 export function aggregateSteadyPitch(
   reference: readonly PitchFrame[], differences: readonly TimedPitchDifference[], rawFramePitch: number | null,
@@ -61,7 +64,7 @@ export function aggregateSteadyPitch(
     pitch: validRaw ? rawFramePitch : null, steadyAggregationApplied: false,
   };
   if (!pairs.length || !validRaw) return result;
-  result.severeErrorRatio = pairs.filter(pair => Math.abs(pair.differenceSemitones) * 100 >= 200 - EPSILON).length / pairs.length;
+  result.severeErrorRatio = pairs.filter(pair => Math.abs(pair.differenceSemitones) * 100 >= ZERO_CREDIT_CENTS - EPSILON).length / pairs.length;
   result.severeErrorCap = 100 * (1 - result.severeErrorRatio);
   result.dispersionCap = 100 * (1 - (1 - rawFramePitch / 100) ** 2);
   // A correct majority cannot erase a sustained wrong portion of each note.

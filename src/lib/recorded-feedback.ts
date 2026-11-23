@@ -34,17 +34,14 @@ export function analyzeRecordedFeedback(reference: PitchFrame[], signal: AudioSi
     // Keep the original time axes and require each phrase to pass the same evidence gates.
     const phrase = analyzeSingingTracks(interval(reference, startTime, endTime),
       interval(recording, startTime + lead, endTime + lead), Math.max(0, Math.min(duration - lead, endTime) - startTime), lead);
-    // A local octave switch cannot count as a successful new register calibration.
-    const consistentRegister = result.octaveEvidence.status === 'calibrated'
-      && phrase.octaveEvidence.shiftSemitones === result.octaveEvidence.shiftSemitones;
-    return { id: index + 1, startTime, endTime, pitch: consistentRegister ? phrase.pitch : null,
+    return { id: index + 1, startTime, endTime, pitch: phrase.pitch,
       rhythm: phrase.rhythm, emotion: phrase.emotion };
   });
 
   const sampleData = recording.filter(frame => frame.time >= lead).map(frame => {
     const time = frame.time - lead;
     const target = reference[Math.floor((time + 1e-8) / PITCH_HOP_SECONDS)];
-    const { marker } = getLivePitchDisplay(frame, result.octaveEvidence, target);
+    const { marker } = getLivePitchDisplay(frame, target);
     const midi = marker && !frame.ambiguous ? marker.midi : undefined;
     return { time, volume: frame.rms, midi, hasPitch: midi !== undefined,
       tone: marker?.tone, isHit: marker?.tone === 'hit', pitchDiff: marker?.difference == null ? undefined : Math.abs(marker.difference) };

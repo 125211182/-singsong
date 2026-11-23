@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useState, useMemo } from 'react';
+import { SINGING_PRACTICE_OCTAVE_SHIFTS } from '@/lib/singing-practice-octave';
 
 interface SampleData {
   time: number;
@@ -23,6 +24,7 @@ interface SingingPortraitProps {
   melodyData: MelodyPoint[];
   tolerance: number;
   studentName: string;
+  allowAdjacentOctaves?: boolean;
 }
 
 // MIDI 转音符名称
@@ -33,7 +35,7 @@ const midiToNoteName = (midi: number): string => {
   return `${note}${octave}`;
 };
 
-export default function SingingPortrait({ sampleData, melodyData, tolerance, studentName }: SingingPortraitProps) {
+export default function SingingPortrait({ sampleData, melodyData, tolerance, studentName, allowAdjacentOctaves = false }: SingingPortraitProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [canvasHeight, setCanvasHeight] = useState(300);
@@ -116,9 +118,10 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
     const timeRange = maxTime - minTime || 1;
 
     // 计算 MIDI 范围
+    const referenceShifts = allowAdjacentOctaves ? SINGING_PRACTICE_OCTAVE_SHIFTS : [0];
     const allMidis = [
       ...sampleData.filter(s => s.midi).map(s => s.midi!),
-      ...melodyData.map(m => m.midi)
+      ...melodyData.flatMap(m => referenceShifts.map(shift => m.midi + shift))
     ];
     const minMidi = Math.min(...allMidis) - 1;
     const maxMidi = Math.max(...allMidis) + 1;
@@ -180,10 +183,11 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
 
       const x1 = timeToX(m1.time);
       const x2 = timeToX(m2.time);
-      const yTop = midiToY(m1.midi + tolerance);
-      const yBottom = midiToY(m1.midi - tolerance);
-
-      ctx.fillRect(x1, yTop, x2 - x1, yBottom - yTop);
+      for (const shift of referenceShifts) {
+        const yTop = midiToY(m1.midi + shift + tolerance);
+        const yBottom = midiToY(m1.midi + shift - tolerance);
+        ctx.fillRect(x1, yTop, x2 - x1, yBottom - yTop);
+      }
     }
 
     // 绘制标准旋律
@@ -278,7 +282,7 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
     ctx.fillStyle = '#ccc';
     ctx.fillText('容错', padding.left + 260, legendY + 5);
 
-  }, [sampleData, melodyData, tolerance, canvasWidth, canvasHeight]);
+  }, [sampleData, melodyData, tolerance, canvasWidth, canvasHeight, allowAdjacentOctaves]);
 
   if (!sampleData || sampleData.length === 0) {
     return null;
@@ -307,7 +311,7 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
         <span>🟢 命中标准音</span>
         <span>🔴 偏离标准音</span>
         <span>🔵 标准旋律</span>
-        <span>🟩 容错范围</span>
+        <span>🟩 {allowAdjacentOctaves ? '同八度及高、低八度的命中范围' : '容错范围'}</span>
         <span className="text-gray-600">← 可左右滚动查看完整轨迹 →</span>
       </div>
     </div>

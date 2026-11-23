@@ -1,47 +1,21 @@
 /**
  * Recorded-audio diagnostics, not a validated attainment scale.
  * The same fixed windows are used for both signals; UI/RAF timing never enters a score.
- * Reference and accompaniment must have the same timeline. One global vocal-register offset is recorded separately.
+ * Reference and accompaniment must have the same timeline.
  */
 import { aggregateSteadyPitch, type SteadyPitchAggregation } from './singing-steady-pitch';
 import { analyzeExpressionMatch, type ExpressionMatchEvidence } from "./singing-expression-match";
+import { SINGING_PRACTICE_TOLERANCE, singingPracticePitchDifference } from "./singing-practice-octave";
 import { analyzeRhythmFeedback, describeSingingExpression, type RhythmEvidence, type ExpressionEvidence } from "./singing-temporal-feedback";
 
-export const SINGING_DIAGNOSTIC_VERSION = "v3.7-feedback" as const;
+export const SINGING_DIAGNOSTIC_VERSION = "v3.8-practice" as const;
 export const PITCH_HOP_SECONDS = 0.05;
 export const PITCH_WINDOW_SECONDS = 0.05;
 export function isSingingDiagnosticVersion(version: unknown): boolean {
-  return version === "v3.0-diagnostic" || version === "v3.1-diagnostic" || version === "v3.2-feedback" || version === "v3.3-feedback" || version === "v3.4-feedback" || version === "v3.5-feedback" || version === "v3.6-feedback" || version === SINGING_DIAGNOSTIC_VERSION;
+  return version === "v3.0-diagnostic" || version === "v3.1-diagnostic" || version === "v3.2-feedback" || version === "v3.3-feedback" || version === "v3.4-feedback" || version === "v3.5-feedback" || version === "v3.6-feedback" || version === "v3.7-feedback" || version === SINGING_DIAGNOSTIC_VERSION;
 }
 export interface AudioSignal { samples: Float32Array; sampleRate: number }
 export interface PitchFrame { time: number; midi: number | null; rms: number; clipped: boolean; ambiguous?: boolean; candidateMidi?: number }
-export interface SingingPitchPair { referenceMidi: number; singingMidi: number }
-export interface SingingOctaveCalibration {
-  status: "calibrated" | "pending";
-  shiftSemitones: -12 | 0 | 12 | null;
-  sampleCount: number;
-  supportRatio: number | null;
-}
-export interface SingingOctaveEvidence extends SingingOctaveCalibration {
-  rawMedianAbsErrorCents: number | null;
-  localOctaveDeviationRatio: number | null;
-}
-export const OCTAVE_CALIBRATION_SAMPLES = 40;
-
-/** The earliest consistent window fixes one register; a poor opening may recover. */
-export function inferSingingOctave(pairs: readonly SingingPitchPair[]): SingingOctaveCalibration {
-  const pending: SingingOctaveCalibration = { status: "pending", shiftSemitones: null, sampleCount: Math.min(pairs.length, OCTAVE_CALIBRATION_SAMPLES), supportRatio: null };
-  for (let start = 0; start + OCTAVE_CALIBRATION_SAMPLES <= pairs.length; start++) {
-    const differences = pairs.slice(start, start + OCTAVE_CALIBRATION_SAMPLES)
-      .map(pair => pair.singingMidi - pair.referenceMidi).sort((a, b) => a - b);
-    const shift = Math.round(differences[Math.floor(differences.length / 2)] / 12) * 12;
-    if (shift !== -12 && shift !== 0 && shift !== 12) continue;
-    const supportRatio = differences.filter(value => Math.abs(value - shift) <= 3).length / differences.length;
-    if (start === 0) pending.supportRatio = supportRatio;
-    if (supportRatio >= 0.8) return { status: "calibrated", shiftSemitones: shift, sampleCount: differences.length, supportRatio };
-  }
-  return pending;
-}
 export interface SingingEvidence extends Omit<Partial<SteadyPitchAggregation>, "pitch" | "steadyAggregationApplied"> {
   hopSeconds: number;
   recordingSeconds: number;
@@ -66,7 +40,6 @@ export interface SingingDiagnosticResult {
   comments: { pitch: string; rhythm: string; emotion: string };
   phraseScores: [];
   diagnosticEvidence: SingingEvidence;
-  octaveEvidence: SingingOctaveEvidence;
   rhythmEvidence?: RhythmEvidence;
   expressionEvidence?: ExpressionEvidence;
   expressionMatchEvidence?: ExpressionMatchEvidence;
@@ -200,7 +173,6 @@ const pitchEvidenceReasons: Record<string, string> = {
   recording_too_short: "录音时间过短，暂时无法给出音高参考。",
   reference_pitch_insufficient: "范唱中可识别的音高片段太少，请联系老师检查范唱。",
   recording_pitch_insufficient: "录音中可识别的音高片段太少，请先试听并检查麦克风。",
-  octave_calibration_pending: "正在核对演唱音区，请结合录音复听起始乐句。",
   octave_candidates_ambiguous: "部分声音含有难以区分的高低音，请减小伴奏外放音量或使用耳机后再唱。",
   paired_coverage_insufficient: "录音与范唱中可同时比较的音高片段太少，请复听起唱和伴奏。",
 };
@@ -210,7 +182,6 @@ export function insufficientSingingEvidence(reason: string): SingingDiagnosticRe
     total: null, pitch: null, rhythm: null, emotion: null,
     scoringVersion: SINGING_DIAGNOSTIC_VERSION, evaluationStatus: "insufficient_evidence",
     phraseScores: [],
-    octaveEvidence: { status: "pending", shiftSemitones: null, sampleCount: 0, supportRatio: null, rawMedianAbsErrorCents: null, localOctaveDeviationRatio: null },
     comments: { pitch: pitchEvidenceReasons[reason] ?? "请教师结合录音复核音高。", rhythm: "节奏由教师按四级标准听评。", emotion: "情绪表现由教师按四级标准听评。" },
     diagnosticEvidence: { hopSeconds: PITCH_HOP_SECONDS, recordingSeconds: 0, referenceVoicedSeconds: 0, pairedVoicedSeconds: 0, voicedCoverage: 0, within50CentsRatio: null, medianAbsErrorCents: null, recordingLeadSeconds: 0, qualityFlags: [reason, "scale_not_validated", "aligned_reference_required"] },
   };
@@ -225,7 +196,7 @@ function reliablePitch(frame: PitchFrame | undefined): frame is PitchFrame & { m
 export function analyzeSingingPitchTracks(
   reference: readonly PitchFrame[], recording: readonly PitchFrame[], recordingLeadSeconds = 0,
   recordingSeconds = recording.length ? recording[recording.length - 1].time + PITCH_HOP_SECONDS / 2 : 0,
-): { pitch: number | null; comment: string; evidence: SingingEvidence; octaveEvidence: SingingOctaveEvidence } {
+): { pitch: number | null; comment: string; evidence: SingingEvidence } {
   const lead = Number.isFinite(recordingLeadSeconds) ? Math.max(0, recordingLeadSeconds) : 0;
   const validTimeline = (track: readonly PitchFrame[]) => track.every((frame, index) =>
     Number.isFinite(frame.time) && frame.time >= 0 && Number.isFinite(frame.rms) && frame.rms >= 0
@@ -235,14 +206,7 @@ export function analyzeSingingPitchTracks(
   const target = reference.filter(reliablePitch);
   const referenceAt = new Map(reference.map(frame => [Math.floor(frame.time / PITCH_HOP_SECONDS), frame]));
   const recordingAt = new Map(recording.map(frame => [Math.floor(frame.time / PITCH_HOP_SECONDS), frame]));
-  const initialPairs: SingingPitchPair[] = [];
-  for (const frame of target) {
-    const other = recordingAt.get(Math.floor((frame.time + lead + 1e-8) / PITCH_HOP_SECONDS));
-    if (reliablePitch(other)) initialPairs.push({ referenceMidi: frame.midi, singingMidi: other.midi });
-  }
-  const calibration = inferSingingOctave(timelineValid ? initialPairs : []);
-  const shift = calibration.shiftSemitones ?? 0;
-  const pairs: (SingingPitchPair & { referenceTime: number })[] = [];
+  const pairs: { referenceTime: number; differenceSemitones: number }[] = [];
   let activeTargetFrames = 0;
   for (const frame of target) {
     const slot = Math.floor((frame.time + lead + 1e-8) / PITCH_HOP_SECONDS);
@@ -256,32 +220,31 @@ export function analyzeSingingPitchTracks(
     let other = raw;
     const isAdjacentReferenceTone = reliablePitch(raw) && [-2, -1, 1, 2].some(offset => {
       const adjacent = referenceAt.get(refSlot + offset);
-      return reliablePitch(adjacent) && Math.abs(raw.midi - shift - adjacent.midi) <= 0.5;
+      return reliablePitch(adjacent) && Math.abs(singingPracticePitchDifference(raw.midi, adjacent.midi)) <= 0.5;
     });
-    if (nearTransition && reliablePitch(raw) && isAdjacentReferenceTone && Math.abs(raw.midi - shift - frame.midi) <= 6) {
+    if (nearTransition && reliablePitch(raw) && isAdjacentReferenceTone && Math.abs(singingPracticePitchDifference(raw.midi, frame.midi)) <= 6) {
       // Only the 100 ms transition neighbourhood may absorb a natural change of note.
       const candidates = [-2, -1, 0, 1, 2].map(offset => recordingAt.get(slot + offset)).filter(reliablePitch);
-      const matched = candidates.find(candidate => Math.abs(candidate.midi - shift - frame.midi) <= 0.5 + 1e-9);
+      const matched = candidates.find(candidate => Math.abs(singingPracticePitchDifference(candidate.midi, frame.midi)) <= 0.5 + 1e-9);
       if (matched) other = matched;
     }
-    if (reliablePitch(other)) pairs.push({ referenceMidi: frame.midi, singingMidi: other.midi, referenceTime: frame.time });
+    if (reliablePitch(other)) pairs.push({
+      referenceTime: frame.time,
+      differenceSemitones: singingPracticePitchDifference(other.midi, frame.midi),
+    });
   }
-  const rawErrors = pairs.map(pair => Math.abs(pair.singingMidi - pair.referenceMidi) * 100).sort((a, b) => a - b);
   const errors: number[] = [];
-  const toleranceCents = 60, zeroCreditCents = 200;
-  let credit = 0, within50 = 0, withinTolerance = 0, octaveDeviations = 0;
+  const toleranceCents = SINGING_PRACTICE_TOLERANCE * 100, zeroCreditCents = 200;
+  let credit = 0, within50 = 0, withinTolerance = 0;
   for (const pair of pairs) {
-    const difference = pair.singingMidi - pair.referenceMidi - shift;
-    const cents = Math.abs(difference) * 100;
+    const cents = Math.abs(pair.differenceSemitones) * 100;
     errors.push(cents);
     if (cents <= 50 + 1e-7) within50++;
     if (cents <= toleranceCents + 1e-7) withinTolerance++;
-    if (Math.abs(Math.abs(difference) - 12) <= 3) octaveDeviations++;
     credit += cents <= toleranceCents + 1e-7 ? 1 : Math.max(0, 1 - (cents - toleranceCents) / (zeroCreditCents - toleranceCents));
   }
   const rawFramePitch = pairs.length ? credit / pairs.length * 100 : null;
-  const aggregation = aggregateSteadyPitch(reference, pairs.map(pair => ({ referenceTime: pair.referenceTime,
-    differenceSemitones: pair.singingMidi - pair.referenceMidi - shift })), rawFramePitch);
+  const aggregation = aggregateSteadyPitch(reference, pairs, rawFramePitch);
   const { pitch: aggregatedPitch, steadyAggregationApplied, ...aggregationEvidence } = aggregation;
   errors.sort((a, b) => a - b);
   const coverage = target.length ? pairs.length / target.length : 0;
@@ -294,8 +257,6 @@ export function analyzeSingingPitchTracks(
   if (pairs.length < 20 || coverage < 0.25) flags.add("paired_coverage_insufficient");
   if (recording.some(frame => frame.clipped)) flags.add("recording_clipped");
   if (recording.some(frame => frame.ambiguous)) flags.add("octave_candidates_ambiguous");
-  if (calibration.status === "pending") flags.add("octave_calibration_pending");
-  if (octaveDeviations > 0) flags.add("local_octave_deviation");
   const scoreScope = coverage >= 0.95 ? "whole_reference" : "measured_segments";
   if (scoreScope === "measured_segments") flags.add("pitch_measurable_segments_only");
   const evidence: SingingEvidence = {
@@ -309,16 +270,12 @@ export function analyzeSingingPitchTracks(
     medianAbsErrorCents: errors.length ? errors[Math.floor(errors.length / 2)] : null,
     recordingLeadSeconds: lead, qualityFlags: [...flags],
   };
-  const octaveEvidence: SingingOctaveEvidence = { ...calibration,
-    rawMedianAbsErrorCents: rawErrors.length ? rawErrors[Math.floor(rawErrors.length / 2)] : null,
-    localOctaveDeviationRatio: pairs.length ? octaveDeviations / pairs.length : null,
-  };
   const failure = [...flags].find(flag => flag !== "octave_candidates_ambiguous" && Object.hasOwn(pitchEvidenceReasons, flag));
   return {
     pitch: failure ? null : aggregatedPitch === null ? null : Math.round(aggregatedPitch * 10) / 10,
-    evidence, octaveEvidence,
+    evidence,
     comment: failure ? pitchEvidenceReasons[failure]
-      : `${!steadyAggregationApplied ? "连续稳态音段覆盖不足，本次沿用逐帧匹配参考。" : "本次主要比较连续稳态音段的中心音，并保留严重偏差和不稳定片段的限制。"}已核对演唱音区，音高可比覆盖 ${(coverage * 100).toFixed(0)}%。${scoreScope === "measured_segments" ? "本分数仅对可测片段计分，不代表已唱完整曲。" : "已覆盖整段参考的主要音高。"}可测片段中符合 ±${evidence.toleranceCents} 音分容差的比例为 ${(withinTolerance / pairs.length * 100).toFixed(0)}%，容差内给足片段分。${octaveDeviations > 0 ? "局部八度差异仍保留，请分句复听。" : "请结合录音练习易偏高或偏低的位置。"}`,
+      : `同八度或相差一个八度均可匹配。音高可比覆盖 ${(coverage * 100).toFixed(0)}%。${scoreScope === "measured_segments" ? "参考分依据本次可测片段。" : "已覆盖整段范唱的主要音高。"}可测片段中有 ${(withinTolerance / pairs.length * 100).toFixed(0)}% 落在 ±${toleranceCents} 音分内。请结合录音练习偏高或偏低的位置。`,
   };
 }
 
@@ -333,7 +290,6 @@ export function analyzeSingingTracks(ref: PitchFrame[], student: PitchFrame[],
   const lead = Number.isFinite(recordingLeadSeconds) ? Math.max(0, recordingLeadSeconds) : 0;
   const pitch = analyzeSingingPitchTracks(ref, student, lead, recordingSeconds);
   result.pitch = pitch.pitch;
-  result.octaveEvidence = pitch.octaveEvidence;
   result.diagnosticEvidence = pitch.evidence;
   result.comments.pitch = pitch.comment;
   if (pitch.pitch !== null) result.evaluationStatus = "diagnostic_only";

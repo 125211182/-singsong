@@ -4,13 +4,15 @@ import { useEffect, useRef, useState } from 'react';
 import SingingPortrait from '@/components/SingingPortrait';
 
 import { detectPitch, extractPitchTrack, insufficientSingingEvidence, PITCH_HOP_SECONDS,
-  PITCH_WINDOW_SECONDS, type PitchFrame, type SingingOctaveCalibration, type SingingPitchPair } from '@/lib/singing-evidence';
-import { getLivePitchDisplay, getLivePitchRange, inferLiveSingingOctave, livePitchY, LIVE_PITCH_STATUS_TEXT } from '@/lib/singing-live-pitch';
+  PITCH_WINDOW_SECONDS, type PitchFrame } from '@/lib/singing-evidence';
+import { getLivePitchDisplay, getLivePitchRange, livePitchY, LIVE_PITCH_STATUS_TEXT } from '@/lib/singing-live-pitch';
 import { buildRecordedFeedback } from '@/lib/recorded-feedback';
+import { SINGING_PRACTICE_OCTAVE_SHIFTS, SINGING_PRACTICE_TOLERANCE } from '@/lib/singing-practice-octave';
+import { getSingingPracticeReward } from '@/lib/singing-practice-rewards';
 
 const SCROLL_SPEED = 100;
-const PITCH_TOLERANCE = 0.6;
 const RECORDING_LEAD_SECONDS = 0.1;
+const OCTAVE_GUIDE_HINT = '同八度、高八度或低八度都可命中。练唱时，浅色线是八度参考线。';
 
 // ================= 类型定义 =================
 interface MelodyPoint {
@@ -78,9 +80,6 @@ interface AppData {
   isPlaying: boolean;
   startTime: number;
   refTrack: PitchFrame[];
-  livePairs: SingingPitchPair[];
-  calibration: SingingOctaveCalibration;
-  lastLiveSlot: number;
   busy: boolean;
   currentSource: AudioBufferSourceNode | null;
   recorder: MediaRecorder | null;
@@ -102,7 +101,11 @@ function renderStudentCard(score: StudentScoreData, key: number | string, audioU
           {score.name} {score.rank && <span className="rank-badge" style={{ background: score.rankColor }}>{score.rank}</span>}
           {score.rankTitle && <span className="rank-title" style={{ color: score.rankColor }}>{score.rankTitle}</span>}
         </div>
-        {score.total != null && <div className="stu-total" style={{ color: score.rankColor }}>{score.total}</div>}
+        {score.total != null && (
+          <div className="stu-total" style={{ color: score.rankColor }}>
+            {score.version?.endsWith('-practice') && <span className="mr-1 text-xs">练唱分</span>}{score.total}
+          </div>
+        )}
       </div>
       <div className="dim-bars">
         {DIMENSIONS.map(dimension => {
@@ -169,9 +172,6 @@ export default function Home() {
     isPlaying: false,
     startTime: 0,
     refTrack: [],
-    livePairs: [],
-    calibration: inferLiveSingingOctave([]),
-    lastLiveSlot: -1,
     busy: false,
     currentSource: null,
     recorder: null,
@@ -349,9 +349,6 @@ export default function Home() {
       data.currentSource = source;
       data.recorder = recorder;
       data.analyser = analyser;
-      data.livePairs = [];
-      data.calibration = inferLiveSingingOctave([]);
-      data.lastLiveSlot = -1;
 
       recorder.start();
       data.startTime = ctx.currentTime + RECORDING_LEAD_SECONDS;
@@ -462,24 +459,23 @@ export default function Home() {
       const buffer = new Float32Array(data.analyser.fftSize);
       data.analyser.getFloatTimeDomainData(buffer);
       const detected = detectPitch(buffer.subarray(-windowSize), sampleRate);
-      if (slot !== data.lastLiveSlot && data.calibration.status === 'pending'
-        && reference?.midi != null && !reference.ambiguous && !reference.clipped
-        && detected.midi != null && !detected.ambiguous && !detected.clipped) {
-        data.livePairs.push({ referenceMidi: reference.midi, singingMidi: detected.midi });
-        data.calibration = inferLiveSingingOctave(data.livePairs);
-      }
-      data.lastLiveSlot = slot;
-      const view = getLivePitchDisplay(detected, data.calibration, reference, PITCH_TOLERANCE);
+      const view = getLivePitchDisplay(detected, reference);
       marker = view.marker;
-      setRealtimeScore(view.status === 'matched' ? '✓' : view.status === 'deviated' ? '↕' : '—');
+      setRealtimeScore(view.status === 'matched' ? '✨' : view.status === 'deviated' ? '↕' : '—');
       setRealtimeStatus(LIVE_PITCH_STATUS_TEXT[view.status]);
     }
     const range = getLivePitchRange(data.refTrack, marker?.midi);
-    const octaveShift = data.calibration.shiftSemitones ?? 0;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
     for (const point of data.melodyData) {
       const x = centerX + (point.time - now) * SCROLL_SPEED;
-      if (x > -10 && x < w) ctx.fillRect(x, livePitchY(point.midi + octaveShift, h, range) - 3, 4, 6);
+      if (x <= -10 || x >= w) continue;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.fillRect(x, livePitchY(point.midi, h, range) - 3, 4, 6);
+      if (!preview) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.13)';
+        for (const shift of SINGING_PRACTICE_OCTAVE_SHIFTS) {
+          if (shift !== 0) ctx.fillRect(x, livePitchY(point.midi + shift, h, range) - 2, 4, 4);
+        }
+      }
     }
     if (marker) {
       ctx.beginPath();
@@ -518,14 +514,14 @@ export default function Home() {
   ) => {
     const data = appDataRef.current;
     const name = `同学 ${String.fromCharCode(65 + data.students.length)}`;
+    const reward = getSingingPracticeReward(result);
     const score: StudentScoreData = {
-      name, total: null, pitch: result.pitch, rhythm: result.rhythm, emotion: result.emotion,
+      name, total: reward.total, pitch: result.pitch, rhythm: result.rhythm, emotion: result.emotion,
       version: result.scoringVersion,
-      portraitReference: data.melodyData.map(point => ({
-        ...point, midi: point.midi + (result.octaveEvidence.shiftSemitones ?? 0),
-      })),
-      rankColor: '#0a84ff', phraseScores, sampleData,
-      comments: { ...result.comments, overall: '以下为本次演唱的分项练习反馈。' },
+      portraitReference: data.melodyData,
+      rank: reward.total === null ? undefined : `Lv.${reward.total}`,
+      rankColor: reward.color, rankTitle: reward.title ?? undefined, phraseScores, sampleData,
+      comments: { ...result.comments, overall: reward.message },
     };
     const audioUrl = URL.createObjectURL(blob);
     setStudentCards(prev => [renderStudentCard(score, name, audioUrl), ...prev]);
@@ -1031,6 +1027,7 @@ export default function Home() {
   const accBuffer = appDataRef.current.accBuffer;
   const students = appDataRef.current.students;
   const portraitScore = studentScoreData[portraitStudentIndex];
+  const portraitAllowsAdjacentOctaves = portraitScore?.version?.endsWith('-practice') ?? false;
 
   // 移动端当前激活的标签页
   const [mobileTab, setMobileTab] = useState<'main' | 'records' | 'score'>('main');
@@ -1166,6 +1163,7 @@ export default function Home() {
             </div>
           </div>
 
+          {refBuffer && <p className="mb-2 text-xs text-[#aaa]">{OCTAVE_GUIDE_HINT}</p>}
           {accLoaded && (
                 <label className="mb-2 flex gap-2 text-xs text-[#ccc]">
                   <input type="checkbox" checked={pairConfirmed} disabled={sessionBusy}
@@ -1243,7 +1241,8 @@ export default function Home() {
                     <SingingPortrait 
                       sampleData={portraitScore?.sampleData || []}
                       melodyData={portraitScore?.portraitReference ?? appDataRef.current.melodyData}
-                      tolerance={portraitScore?.version ? PITCH_TOLERANCE : 1.8}
+                      tolerance={portraitScore?.version ? SINGING_PRACTICE_TOLERANCE : 1.8}
+                      allowAdjacentOctaves={portraitAllowsAdjacentOctaves}
                       studentName={portraitScore?.name || ''}
                     />
                   ) : (
@@ -1302,6 +1301,7 @@ export default function Home() {
                 </div>
               </div>
 
+              {refBuffer && <p className="mb-2 text-xs text-[#aaa]">{OCTAVE_GUIDE_HINT}</p>}
               {accLoaded && (
                 <label className="mb-2 flex gap-2 text-xs text-[#ccc]">
                   <input type="checkbox" checked={pairConfirmed} disabled={sessionBusy}
@@ -1339,7 +1339,8 @@ export default function Home() {
                     <SingingPortrait
                       sampleData={portraitScore?.sampleData || []}
                       melodyData={portraitScore?.portraitReference ?? appDataRef.current.melodyData}
-                      tolerance={portraitScore?.version ? PITCH_TOLERANCE : 1.8}
+                      tolerance={portraitScore?.version ? SINGING_PRACTICE_TOLERANCE : 1.8}
+                      allowAdjacentOctaves={portraitAllowsAdjacentOctaves}
                       studentName={portraitScore?.name || ''}
                     />
                   </div>
