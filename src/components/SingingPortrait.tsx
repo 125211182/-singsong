@@ -1,14 +1,12 @@
 'use client';
 
 import { useRef, useEffect, useState, useMemo } from 'react';
-import { SINGING_PRACTICE_OCTAVE_SHIFTS } from '@/lib/singing-practice-octave';
 
 interface SampleData {
   time: number;
   volume: number;
   hasPitch: boolean;
   isHit: boolean;
-  tone?: 'hit' | 'miss' | 'pending';
   pitchDiff?: number;
   midi?: number;
 }
@@ -24,7 +22,6 @@ interface SingingPortraitProps {
   melodyData: MelodyPoint[];
   tolerance: number;
   studentName: string;
-  allowAdjacentOctaves?: boolean;
 }
 
 // MIDI 转音符名称
@@ -35,7 +32,7 @@ const midiToNoteName = (midi: number): string => {
   return `${note}${octave}`;
 };
 
-export default function SingingPortrait({ sampleData, melodyData, tolerance, studentName, allowAdjacentOctaves = false }: SingingPortraitProps) {
+export default function SingingPortrait({ sampleData, melodyData, tolerance, studentName }: SingingPortraitProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [canvasHeight, setCanvasHeight] = useState(300);
@@ -118,10 +115,9 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
     const timeRange = maxTime - minTime || 1;
 
     // 计算 MIDI 范围
-    const referenceShifts = allowAdjacentOctaves ? SINGING_PRACTICE_OCTAVE_SHIFTS : [0];
     const allMidis = [
       ...sampleData.filter(s => s.midi).map(s => s.midi!),
-      ...melodyData.flatMap(m => referenceShifts.map(shift => m.midi + shift))
+      ...melodyData.map(m => m.midi)
     ];
     const minMidi = Math.min(...allMidis) - 1;
     const maxMidi = Math.max(...allMidis) + 1;
@@ -183,11 +179,10 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
 
       const x1 = timeToX(m1.time);
       const x2 = timeToX(m2.time);
-      for (const shift of referenceShifts) {
-        const yTop = midiToY(m1.midi + shift + tolerance);
-        const yBottom = midiToY(m1.midi + shift - tolerance);
-        ctx.fillRect(x1, yTop, x2 - x1, yBottom - yTop);
-      }
+      const yTop = midiToY(m1.midi + tolerance);
+      const yBottom = midiToY(m1.midi - tolerance);
+
+      ctx.fillRect(x1, yTop, x2 - x1, yBottom - yTop);
     }
 
     // 绘制标准旋律
@@ -230,7 +225,7 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
       const x2 = timeToX(s2.time);
       const y2 = midiToY(s2.midi);
 
-      ctx.strokeStyle = s1.tone === 'pending' ? '#ffd60a' : s1.isHit ? '#30d158' : '#ff453a';
+      ctx.strokeStyle = s1.isHit ? '#30d158' : '#ff453a';
       ctx.beginPath();
       ctx.moveTo(x1, y1);
       ctx.lineTo(x2, y2);
@@ -243,7 +238,7 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
       const x = timeToX(sample.time);
       const y = midiToY(sample.midi);
 
-      ctx.fillStyle = sample.tone === 'pending' ? '#ffd60a' : sample.isHit ? '#30d158' : '#ff453a';
+      ctx.fillStyle = sample.isHit ? '#30d158' : '#ff453a';
       ctx.beginPath();
       ctx.arc(x, y, 3.5, 0, Math.PI * 2);
       ctx.fill();
@@ -282,7 +277,7 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
     ctx.fillStyle = '#ccc';
     ctx.fillText('容错', padding.left + 260, legendY + 5);
 
-  }, [sampleData, melodyData, tolerance, canvasWidth, canvasHeight, allowAdjacentOctaves]);
+  }, [sampleData, melodyData, tolerance, canvasWidth, canvasHeight]);
 
   if (!sampleData || sampleData.length === 0) {
     return null;
@@ -311,7 +306,7 @@ export default function SingingPortrait({ sampleData, melodyData, tolerance, stu
         <span>🟢 命中标准音</span>
         <span>🔴 偏离标准音</span>
         <span>🔵 标准旋律</span>
-        <span>🟩 {allowAdjacentOctaves ? '同八度及高、低八度的命中范围' : '容错范围'}</span>
+        <span>🟩 容错范围</span>
         <span className="text-gray-600">← 可左右滚动查看完整轨迹 →</span>
       </div>
     </div>
